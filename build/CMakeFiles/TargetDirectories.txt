@@ -1,0 +1,4 @@
+/home/harizibam/nbase2/audSync/build/CMakeFiles/audsync_client.dir
+/home/harizibam/nbase2/audSync/build/CMakeFiles/audsync_server.dir
+/home/harizibam/nbase2/audSync/build/CMakeFiles/edit_cache.dir
+/home/harizibam/nbase2/audSync/build/CMakeFiles/rebuild_cache.dir
