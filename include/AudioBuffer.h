@@ -17,6 +17,7 @@ class AudioBuffer {
 
     bool isEmpty() const;
     bool isFull() const;
+
   private:
     mutable std::mutex mutex_;
     std::condition_variable not_empty_;
