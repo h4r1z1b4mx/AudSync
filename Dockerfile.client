@@ -1,5 +1,5 @@
 # Multi-stage build for AudSync Client
-FROM ubuntu:22.04 as builder
+FROM ubuntu:22.04 AS builder
 
 # Install build dependencies
 RUN apt-get update && apt-get install -y \
@@ -10,7 +10,6 @@ RUN apt-get update && apt-get install -y \
     portaudio19-dev \
     libportaudio2 \
     libportaudiocpp0 \
-    librnnoise-dev \
     git \
     && rm -rf /var/lib/apt/lists/*
 
@@ -33,7 +32,6 @@ RUN apt-get update && apt-get install -y \
     libportaudio2 \
     libportaudiocpp0 \
     libasound2 \
-    librnnoise0 \
     pulseaudio \
     pulseaudio-utils \
     alsa-utils \
@@ -48,8 +46,8 @@ COPY --from=builder /app/build/audsync_client /usr/local/bin/audsync_client
 # Make executable
 RUN chmod +x /usr/local/bin/audsync_client
 
-# Create audio group and add user (for audio device access)
-RUN groupadd -g 29 audio && usermod -a -G audio audsync
+# Add user to audio group (for audio device access)
+RUN usermod -a -G audio audsync
 
 # Switch to non-root user
 USER audsync
