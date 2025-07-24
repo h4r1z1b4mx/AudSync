@@ -43,7 +43,7 @@ void AudioServer::stop() {
   }
   
   //Clear clients
-  std::lock_guard<std::mutex> lock(clients_mutex_);
+  std::lock_guard<std::mutex> lock(clients_mutex);
 
   clients_.clear();
   std::cout <<"Server stopped" << std::endl;
@@ -54,7 +54,7 @@ bool AudioServer::isRunning() const {
 }
 
 size_t AudioServer::getConnectedClients() const {
-  std::lock_guard<std::mutex> lock(clients_mutex_);
+  std::lock_guard<std::mutex> lock(clients_mutex);
   return clients_.size();
 }
 void AudioServer::handleClientMessage(const Message& message, int client_socket) {
@@ -73,7 +73,7 @@ void AudioServer::handleClientMessage(const Message& message, int client_socket)
             
         case MessageType::CLIENT_READY:
             {
-                std::lock_guard<std::mutex> lock(clients_mutex_);
+                std::lock_guard<std::mutex> lock(clients_mutex);
                 auto it = std::find_if(clients_.begin(), clients_.end(),
                     [client_socket](const ClientInfo& client) {
                         return client.socket_fd == client_socket;
@@ -101,9 +101,9 @@ void AudioServer::handleClientMessage(const Message& message, int client_socket)
 
 void AudioServer::broadcastAudioToOthers(const Message& message, int sender_socket) {
   
-  std::lock_guard<std::mutex> lock(clients_mutex_);
+  std::lock_guard<std::mutex> lock(clients_mutex);
 
-  for(const auto& client: clients){
+  for(const auto& client: clients_  ){
     if(client.socket_fd != sender_socket && client.ready) {
         network_manager_.sendMessage(message, client.socket_fd);
     }
@@ -111,7 +111,7 @@ void AudioServer::broadcastAudioToOthers(const Message& message, int sender_sock
 }
 
 void AudioServer::addClient(int socket_fd) {
-    std::lock_guard<std::mutex> lock(clients_mutex_);
+    std::lock_guard<std::mutex> lock(clients_mutex);
     
     ClientInfo client;
     client.socket_fd = socket_fd;
@@ -122,7 +122,7 @@ void AudioServer::addClient(int socket_fd) {
 }
 
 void AudioServer::removeClient(int socket_fd) {
-    std::lock_guard<std::mutex> lock(clients_mutex_);
+    std::lock_guard<std::mutex> lock(clients_mutex);
     
     clients_.erase(
         std::remove_if(clients_.begin(), clients_.end(),

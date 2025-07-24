@@ -18,7 +18,7 @@ int main(int argc, char* argv[]) {
     port = std::stoi(argv[1]);
   }
 
-  std::cout << "AudSync Server - Real-time Audio Streaming Hub" <<endl;
+  std::cout << "AudSync Server - Real-time Audio Streaming Hub" <<std::endl;
   std::cout << "Starting server on port: "<<port << std::endl;
   
   AudioServer server;

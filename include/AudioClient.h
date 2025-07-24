@@ -33,5 +33,5 @@ class AudioClient {
     void handleNetworkMessage(const Message& message, int socket_fd);
     void onAudioCaptured(const float* data, size_t samples);
     void networkLoop();
-}
+};
 
