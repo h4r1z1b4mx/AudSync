@@ -49,7 +49,7 @@ class NetworkManager {
     int getClientSocket() const {return client_socket_;}
 
   private:
-    int socket_socket_;
+    int server_socket_;
     int client_socket_;
     std::atomic<bool> is_server_;
     std::atomic<bool> running_;
