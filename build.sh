@@ -3,7 +3,7 @@
 # Build script for AudSync
 set -e
 
-PROJECT_DIR="/home/harizibam/cmpy/AudSync"
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUILD_DIR="$PROJECT_DIR/build"
 
 echo "Building AudSync..."
