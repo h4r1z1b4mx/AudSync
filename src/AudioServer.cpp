@@ -57,7 +57,7 @@ size_t AudioServer::getConnectedClients() const {
   std::lock_guard<std::mutex> lock(clients_mutex);
   return clients_.size();
 }
-void AudioServer::handleClientMessage(const Message& message, int client_socket) {
+void AudioServer::handleClientMessage(const Message& message, SOCKET client_socket) {
     switch (message.type) {
         case MessageType::CONNECT:
             addClient(client_socket);
@@ -99,7 +99,7 @@ void AudioServer::handleClientMessage(const Message& message, int client_socket)
     }
 }
 
-void AudioServer::broadcastAudioToOthers(const Message& message, int sender_socket) {
+void AudioServer::broadcastAudioToOthers(const Message& message, SOCKET sender_socket) {
   
   std::lock_guard<std::mutex> lock(clients_mutex);
 
@@ -110,7 +110,7 @@ void AudioServer::broadcastAudioToOthers(const Message& message, int sender_sock
   }
 }
 
-void AudioServer::addClient(int socket_fd) {
+void AudioServer::addClient(SOCKET socket_fd) {
     std::lock_guard<std::mutex> lock(clients_mutex);
     
     ClientInfo client;
@@ -121,7 +121,7 @@ void AudioServer::addClient(int socket_fd) {
     clients_.push_back(client);
 }
 
-void AudioServer::removeClient(int socket_fd) {
+void AudioServer::removeClient(SOCKET socket_fd) {
     std::lock_guard<std::mutex> lock(clients_mutex);
     
     clients_.erase(

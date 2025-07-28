@@ -1,21 +1,39 @@
 #include "NetworkManager.h"
 #include <iostream>
-#include <unistd.h>
-#include <arpa/inet.h>
 #include <cstring>
 
 NetworkManager::NetworkManager() 
-    : server_socket_(-1), client_socket_(-1), is_server_(false), running_(false) {
+    : server_socket_(INVALID_SOCKET_VAL), client_socket_(INVALID_SOCKET_VAL), is_server_(false), running_(false) {
+    initializeNetworking();
 }
 
 NetworkManager::~NetworkManager() {
     disconnect();
     stopServer();
+    cleanupNetworking();
+}
+
+bool NetworkManager::initializeNetworking() {
+#ifdef _WIN32
+    WSADATA wsaData;
+    int result = WSAStartup(MAKEWORD(2, 2), &wsaData);
+    if (result != 0) {
+        std::cerr << "WSAStartup failed: " << result << std::endl;
+        return false;
+    }
+#endif
+    return true;
+}
+
+void NetworkManager::cleanupNetworking() {
+#ifdef _WIN32
+    WSACleanup();
+#endif
 }
 
 bool NetworkManager::connectToServer(const std::string& host, int port) {
     client_socket_ = socket(AF_INET, SOCK_STREAM, 0);
-    if (client_socket_ < 0) {
+    if (client_socket_ == INVALID_SOCKET_VAL) {
         std::cerr << "Failed to create socket" << std::endl;
         return false;
     }
@@ -24,17 +42,21 @@ bool NetworkManager::connectToServer(const std::string& host, int port) {
     server_addr.sin_family = AF_INET;
     server_addr.sin_port = htons(port);
     
+#ifdef _WIN32
     if (inet_pton(AF_INET, host.c_str(), &server_addr.sin_addr) <= 0) {
+#else
+    if (inet_pton(AF_INET, host.c_str(), &server_addr.sin_addr) <= 0) {
+#endif
         std::cerr << "Invalid address" << std::endl;
-        close(client_socket_);
-        client_socket_ = -1;
+        close_socket(client_socket_);
+        client_socket_ = INVALID_SOCKET_VAL;
         return false;
     }
 
-    if (connect(client_socket_, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
+    if (connect(client_socket_, (struct sockaddr*)&server_addr, sizeof(server_addr)) == SOCKET_ERROR_VAL) {
         std::cerr << "Connection failed" << std::endl;
-        close(client_socket_);
-        client_socket_ = -1;
+        close_socket(client_socket_);
+        client_socket_ = INVALID_SOCKET_VAL;
         return false;
     }
 
@@ -47,44 +69,49 @@ bool NetworkManager::connectToServer(const std::string& host, int port) {
 }
 
 void NetworkManager::disconnect() {
-    if (client_socket_ >= 0) {
+    if (client_socket_ != INVALID_SOCKET_VAL) {
         // Send disconnect message
         Message disconnect_msg;
         disconnect_msg.type = MessageType::DISCONNECT;
         disconnect_msg.size = 0;
         sendMessage(disconnect_msg, client_socket_);
         
-        close(client_socket_);
-        client_socket_ = -1;
+        close_socket(client_socket_);
+        client_socket_ = INVALID_SOCKET_VAL;
     }
 }
 
 bool NetworkManager::startServer(int port) {
     server_socket_ = socket(AF_INET, SOCK_STREAM, 0);
-    if (server_socket_ < 0) {
+    if (server_socket_ == INVALID_SOCKET_VAL) {
         std::cerr << "Failed to create server socket" << std::endl;
         return false;
     }
 
+#ifdef _WIN32
+    char opt = 1;
+    setsockopt(server_socket_, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+#else
     int opt = 1;
     setsockopt(server_socket_, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+#endif
 
     sockaddr_in server_addr{};
     server_addr.sin_family = AF_INET;
     server_addr.sin_addr.s_addr = INADDR_ANY;
     server_addr.sin_port = htons(port);
 
-    if (bind(server_socket_, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
+    if (bind(server_socket_, (struct sockaddr*)&server_addr, sizeof(server_addr)) == SOCKET_ERROR_VAL) {
         std::cerr << "Bind failed" << std::endl;
-        close(server_socket_);
-        server_socket_ = -1;
+        close_socket(server_socket_);
+        server_socket_ = INVALID_SOCKET_VAL;
         return false;
     }
 
-    if (listen(server_socket_, 10) < 0) {
+    if (listen(server_socket_, 10) == SOCKET_ERROR_VAL) {
         std::cerr << "Listen failed" << std::endl;
-        close(server_socket_);
-        server_socket_ = -1;
+        close_socket(server_socket_);
+        server_socket_ = INVALID_SOCKET_VAL;
         return false;
     }
 
@@ -99,9 +126,9 @@ bool NetworkManager::startServer(int port) {
 void NetworkManager::stopServer() {
     running_ = false;
     
-    if (server_socket_ >= 0) {
-        close(server_socket_);
-        server_socket_ = -1;
+    if (server_socket_ != INVALID_SOCKET_VAL) {
+        close_socket(server_socket_);
+        server_socket_ = INVALID_SOCKET_VAL;
     }
     
     if (accept_thread_.joinable()) {
@@ -111,9 +138,9 @@ void NetworkManager::stopServer() {
     is_server_ = false;
 }
 
-bool NetworkManager::sendMessage(const Message& message, int socket_fd) {
-    int target_socket = (socket_fd >= 0) ? socket_fd : client_socket_;
-    if (target_socket < 0) return false;
+bool NetworkManager::sendMessage(const Message& message, SOCKET socket_fd) {
+    SOCKET target_socket = (socket_fd != INVALID_SOCKET_VAL) ? socket_fd : client_socket_;
+    if (target_socket == INVALID_SOCKET_VAL) return false;
 
     // Send header
     uint8_t type = static_cast<uint8_t>(message.type);
@@ -128,9 +155,9 @@ bool NetworkManager::sendMessage(const Message& message, int socket_fd) {
     return true;
 }
 
-bool NetworkManager::receiveMessage(Message& message, int socket_fd) {
-    int target_socket = (socket_fd >= 0) ? socket_fd : client_socket_;
-    if (target_socket < 0) return false;
+bool NetworkManager::receiveMessage(Message& message, SOCKET socket_fd) {
+    SOCKET target_socket = (socket_fd != INVALID_SOCKET_VAL) ? socket_fd : client_socket_;
+    if (target_socket == INVALID_SOCKET_VAL) return false;
 
     // Receive header
     uint8_t type;
@@ -149,12 +176,12 @@ bool NetworkManager::receiveMessage(Message& message, int socket_fd) {
     return true;
 }
 
-void NetworkManager::setMessageHandler(std::function<void(const Message&, int)> handler) {
+void NetworkManager::setMessageHandler(std::function<void(const Message&, SOCKET)> handler) {
     message_handler_ = handler;
 }
 
 bool NetworkManager::isConnected() const {
-    return client_socket_ >= 0 || (is_server_ && running_);
+    return client_socket_ != INVALID_SOCKET_VAL || (is_server_ && running_);
 }
 
 void NetworkManager::acceptClients() {
@@ -162,8 +189,8 @@ void NetworkManager::acceptClients() {
         sockaddr_in client_addr{};
         socklen_t client_len = sizeof(client_addr);
         
-        int client_fd = accept(server_socket_, (struct sockaddr*)&client_addr, &client_len);
-        if (client_fd < 0) {
+        SOCKET client_fd = accept(server_socket_, (struct sockaddr*)&client_addr, &client_len);
+        if (client_fd == INVALID_SOCKET_VAL) {
             if (running_) {
                 std::cerr << "Accept failed" << std::endl;
             }
@@ -175,7 +202,7 @@ void NetworkManager::acceptClients() {
     }
 }
 
-void NetworkManager::handleClient(int client_fd) {
+void NetworkManager::handleClient(SOCKET client_fd) {
     while (running_) {
         Message message;
         if (receiveMessage(message, client_fd)) {
@@ -191,16 +218,20 @@ void NetworkManager::handleClient(int client_fd) {
         }
     }
     
-    close(client_fd);
+    close_socket(client_fd);
     std::cout << "Client disconnected: " << client_fd << std::endl;
 }
 
-bool NetworkManager::sendRaw(const void* data, size_t size, int socket_fd) {
+bool NetworkManager::sendRaw(const void* data, size_t size, SOCKET socket_fd) {
     size_t sent = 0;
     const char* ptr = static_cast<const char*>(data);
     
     while (sent < size) {
+#ifdef _WIN32
+        int result = send(socket_fd, ptr + sent, static_cast<int>(size - sent), 0);
+#else
         ssize_t result = send(socket_fd, ptr + sent, size - sent, 0);
+#endif
         if (result <= 0) return false;
         sent += result;
     }
@@ -208,12 +239,16 @@ bool NetworkManager::sendRaw(const void* data, size_t size, int socket_fd) {
     return true;
 }
 
-bool NetworkManager::receiveRaw(void* data, size_t size, int socket_fd) {
+bool NetworkManager::receiveRaw(void* data, size_t size, SOCKET socket_fd) {
     size_t received = 0;
     char* ptr = static_cast<char*>(data);
     
     while (received < size) {
+#ifdef _WIN32
+        int result = recv(socket_fd, ptr + received, static_cast<int>(size - received), 0);
+#else
         ssize_t result = recv(socket_fd, ptr + received, size - received, 0);
+#endif
         if (result <= 0) return false;
         received += result;
     }

@@ -7,7 +7,7 @@
 #include <mutex>
 
 struct ClientInfo {
-  int socket_fd;
+  SOCKET socket_fd;
   bool ready;
   std::string id;
 };
@@ -31,9 +31,9 @@ class AudioServer {
     mutable std::mutex clients_mutex;
     std::thread server_thread_;
 
-    void handleClientMessage(const Message& message, int client_socket);
-    void broadcastAudioToOthers(const Message& message, int sender_socket);
-    void addClient(int socket_fd);
-    void removeClient(int socket_fd);
+    void handleClientMessage(const Message& message, SOCKET client_socket);
+    void broadcastAudioToOthers(const Message& message, SOCKET sender_socket);
+    void addClient(SOCKET socket_fd);
+    void removeClient(SOCKET socket_fd);
     void serverLoop();
 };

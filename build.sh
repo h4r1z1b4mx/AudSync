@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Build script for AudSync
+# Cross-platform build script for AudSync
 set -e
 
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -15,19 +15,48 @@ fi
 
 cd "$BUILD_DIR"
 
-# Run CMake
-echo "Configuring with CMake..."
-cmake ..
+# Detect OS and configure appropriately
+if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" ]]; then
+    echo "Building for Windows..."
+    if [ -n "$VCPKG_ROOT" ]; then
+        echo "Using vcpkg toolchain..."
+        cmake .. -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
+    else
+        echo "Warning: VCPKG_ROOT not set. Using default cmake configuration."
+        cmake ..
+    fi
+    cmake --build . --config Release
+elif [[ "$OSTYPE" == "darwin"* ]]; then
+    echo "Building for macOS..."
+    cmake ..
+    make -j$(sysctl -n hw.ncpu)
+elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+    echo "Building for Linux..."
+    cmake ..
+    make -j$(nproc)
+else
+    echo "Unknown OS: $OSTYPE"
+    echo "Attempting generic build..."
+    cmake ..
+    cmake --build .
+fi
 
-# Build the project
-echo "Building project..."
-make -j$(nproc)
-
-echo "Build completed!"
-echo ""
-echo "Executables created:"
-echo "  $BUILD_DIR/audsync_server - Audio streaming server"
-echo "  $BUILD_DIR/audsync_client - Audio streaming client"
+if [ $? -eq 0 ]; then
+    echo ""
+    echo "Build completed successfully!"
+    echo ""
+    echo "Executables created:"
+    if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" ]]; then
+        echo "  $BUILD_DIR/audsync_server.exe - Audio streaming server"
+        echo "  $BUILD_DIR/audsync_client.exe - Audio streaming client"
+    else
+        echo "  $BUILD_DIR/audsync_server - Audio streaming server"
+        echo "  $BUILD_DIR/audsync_client - Audio streaming client"
+    fi
+else
+    echo "Build failed!"
+    exit 1
+fi
 echo ""
 echo "Usage:"
 echo "  1. Start the server: ./audsync_server [port]"
