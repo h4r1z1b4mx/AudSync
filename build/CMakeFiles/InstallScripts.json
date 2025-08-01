@@ -1,0 +1,7 @@
+{
+	"InstallScripts" : 
+	[
+		"D:/AudSync-cross/build/cmake_install.cmake"
+	],
+	"Parallel" : false
+}

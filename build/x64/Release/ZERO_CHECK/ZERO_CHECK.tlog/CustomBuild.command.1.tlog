@@ -1,0 +1,10 @@
+^D:\AUDSYNC-CROSS\BUILD\CMAKEFILES\C39265ACE03EDDD878BE55CA5FA95641\GENERATE.STAMP.RULE
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -SD:/AudSync-cross -BD:/AudSync-cross/build --check-stamp-list CMakeFiles/generate.stamp.list --vs-solution-file D:/AudSync-cross/build/AudSync.sln
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
