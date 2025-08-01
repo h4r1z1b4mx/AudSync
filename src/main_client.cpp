@@ -79,6 +79,6 @@ int main(int argc, char* argv[]) {
     // Run the client main loop (should handle commands and pass to logger/recorder)
     client.run();
 
-    std::cout << "Client disconnected.\n";
+    std::cout << "Client shutting down...\n";
     return 0;
 }
