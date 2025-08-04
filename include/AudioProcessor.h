@@ -10,19 +10,20 @@ class AudioProcessor {
       AudioProcessor();
       ~AudioProcessor();
 
-      bool initialize(int sample_rate = 44100, int frames_per_buffer = 256);
+      // Now supports both input and output device selection
+      bool initialize(int inputDeviceId, int outputDeviceId, int sample_rate, int channels, int frames_per_buffer = 256);
       void cleanup();
 
       bool startRecording();
       bool startPlayback();
       void stop();
 
-      // Set callback for when audio data is captured
       void setAudioCaptureCallback(std::function<void(const float*, size_t)> callback);
       bool addPlaybackData(const float* data, size_t samples);
 
-      bool isRecording() const {return recording_; }
-      bool isPlaying() const {return playing_; }
+      bool isRecording() const { return recording_; }
+      bool isPlaying() const { return playing_; }
+
   private:
       PaStream* input_stream_;
       PaStream* output_stream_;
@@ -34,8 +35,11 @@ class AudioProcessor {
       std::atomic<bool> playing_;
       std::atomic<bool> initialized_;
 
-      int sample_rate;
+      int sample_rate_;
       int frames_per_buffer_;
+      int inputDeviceId_;
+      int outputDeviceId_;
+      int channels_;
 
       static int recordCallback(const void* inputBuffer, void* outputBuffer, unsigned long framesPerBuffer, const PaStreamCallbackTimeInfo* timeInfo, PaStreamCallbackFlags statusFlags, void* userData);
       static int playCallback(const void* inputBuffer, void* outputBuffer, unsigned long framesPerBuffer, const PaStreamCallbackTimeInfo* timeInfo, PaStreamCallbackFlags statusFlags, void* userData);
