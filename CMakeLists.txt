@@ -17,10 +17,14 @@ find_package(Threads REQUIRED)
 # Include directories
 include_directories(include)
 
+
 # Source files
 set(COMMON_SOURCES
     src/AudioBuffer.cpp
     src/NetworkManager.cpp
+    src/SessionLogger.cpp
+    src/AudioRecorder.cpp
+    src/JitterBuffer.cpp
 )
 
 set(CLIENT_SOURCES
@@ -34,6 +38,14 @@ set(SERVER_SOURCES
     src/AudioServer.cpp
     src/main_server.cpp
     ${COMMON_SOURCES}
+)
+
+set(COMMON_SOURCES
+    src/AudioBuffer.cpp
+    src/NetworkManager.cpp
+    src/SessionLogger.cpp
+    src/AudioRecorder.cpp
+    src/JitterBuffer.cpp
 )
 
 # Platform-specific network libraries
