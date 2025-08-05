@@ -220,21 +220,28 @@ void AudioClient::handleNetworkMessage(const Message& message, int socket_fd) {
     }
 }
 
+// AudioClient.cpp - Fix onAudioCaptured method
 void AudioClient::onAudioCaptured(const float* data, size_t samples) {
     if (!connected_ || !audio_active_) return;
+
+    // ✅ Generate real timestamp
+    uint64_t timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::high_resolution_clock::now().time_since_epoch()
+    ).count();
 
     // Send audio data to server
     Message audio_msg;
     audio_msg.type = MessageType::AUDIO_DATA;
     audio_msg.size = samples * sizeof(float);
     audio_msg.data.resize(audio_msg.size);
+    audio_msg.timestamp = timestamp;  // ✅ Set real timestamp
     memcpy(audio_msg.data.data(), data, audio_msg.size);
     network_manager_.sendMessage(audio_msg);
 
-    // Logging
+    // Logging with real timestamp
     if (logger_) {
         logger_->logAudioStats(audio_msg.size, sampleRate_, channels_, std::to_string(inputDeviceId_));
-        logger_->logPacketMetadata(/*timestamp*/ 0, audio_msg.size);
+        logger_->logPacketMetadata(timestamp, audio_msg.size);  // ✅ Use real timestamp
     }
 
     // Recording

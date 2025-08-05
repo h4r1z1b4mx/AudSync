@@ -103,7 +103,7 @@ void AudioServer::handleClientMessage(const Message& message, SOCKET client_sock
             // Logging and recording
             if (logger_) {
                 logger_->logAudioStats(message.size, sampleRate_, channels_, std::to_string(client_socket));
-                logger_->logPacketMetadata(/*timestamp*/ 0, message.size);
+                logger_->logPacketMetadata(message.timestamp, message.size);
             }
             if (recorder_ && recorder_->isRecording()) {
                 std::vector<uint8_t> raw(message.data.begin(), message.data.end());
