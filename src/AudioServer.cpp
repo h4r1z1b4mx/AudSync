@@ -5,6 +5,12 @@
 #include <iomanip>
 #include <sstream>
 
+
+#ifdef _WIN32
+    #include <windows.h>  // For CreateDirectoryA
+#else
+    #include <sys/stat.h> // For mkdir
+#endif
 // Updated constructor to accept buffer size and output device (future use)
 AudioServer::AudioServer(int sampleRate,
                          int channels,
@@ -165,18 +171,21 @@ void AudioServer::serverLoop() {
 }
 
 // Utility to generate unique filenames with timestamp (for logs/recordings)
+// Add this to both AudioServer.cpp and AudioClient.cpp
 std::string AudioServer::generateUniqueFilename(const std::string& prefix, const std::string& ext) {
     auto now = std::chrono::system_clock::now();
-    auto t = std::chrono::system_clock::to_time_t(now);
-    std::tm tm;
-#ifdef _WIN32
-    localtime_s(&tm, &t);
-#else
-    localtime_r(&t, &tm);
-#endif
+    auto time_t = std::chrono::system_clock::to_time_t(now);
     std::ostringstream oss;
-    oss << prefix << "_"
-        << std::put_time(&tm, "%Y%m%d_%H%M%S")
-        << "." << ext;
-    return oss.str();
+    oss << std::put_time(std::localtime(&time_t), "%Y%m%d_%H%M%S");
+    
+    // ✅ SET YOUR DESIRED DIRECTORY HERE
+    std::string directory = "recordings/";  // Change this!
+    
+    #ifdef _WIN32
+        CreateDirectoryA(directory.c_str(), NULL);
+    #else
+        mkdir(directory.c_str(), 0755);
+    #endif
+    
+    return directory + prefix + "_" + oss.str() + "." + ext;
 }

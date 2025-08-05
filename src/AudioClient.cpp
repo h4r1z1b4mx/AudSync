@@ -6,6 +6,12 @@
 #include <sstream>
 #include <portaudio.h>
 
+#ifdef _WIN32
+    #include <windows.h>  // For CreateDirectoryA
+#else
+    #include <sys/stat.h> // For mkdir
+#endif
+
 // Updated constructor to include output device and buffer size
 AudioClient::AudioClient(int inputDeviceId,
                          int outputDeviceId,
@@ -287,19 +293,21 @@ std::vector<std::string> AudioClient::getOutputDeviceNames() {
     return devices;
 }
 
-// Utility to generate unique filenames with timestamp
+// Utility to generate unique filenames with timestamp// Add this to both AudioServer.cpp and AudioClient.cpp
 std::string AudioClient::generateUniqueFilename(const std::string& prefix, const std::string& ext) {
     auto now = std::chrono::system_clock::now();
-    auto t = std::chrono::system_clock::to_time_t(now);
-    std::tm tm;
-#ifdef _WIN32
-    localtime_s(&tm, &t);
-#else
-    localtime_r(&t, &tm);
-#endif
+    auto time_t = std::chrono::system_clock::to_time_t(now);
     std::ostringstream oss;
-    oss << prefix << "_"
-        << std::put_time(&tm, "%Y%m%d_%H%M%S")
-        << "." << ext;
-    return oss.str();
+    oss << std::put_time(std::localtime(&time_t), "%Y%m%d_%H%M%S");
+    
+    // ✅ SET YOUR DESIRED DIRECTORY HERE
+    std::string directory = "recordings/";  // Change this!
+    
+    #ifdef _WIN32
+        CreateDirectoryA(directory.c_str(), NULL);
+    #else
+        mkdir(directory.c_str(), 0755);
+    #endif
+    
+    return directory + prefix + "_" + oss.str() + "." + ext;
 }
