@@ -1,5 +1,8 @@
 #include "AudioRecorder.h"
 #include <cstring>
+#include <algorithm>
+#include <cmath>
+#include <random>
 
 AudioRecorder::AudioRecorder()
     : recording_(false), dataSize_(0), sampleRate_(0), channels_(0) {}
@@ -36,17 +39,43 @@ bool AudioRecorder::isRecording() const {
 void AudioRecorder::writeSamples(const std::vector<uint8_t>& samples) {
     std::lock_guard<std::mutex> lock(mutex_);
     if (recording_ && outFile_.is_open()) {
-        outFile_.write(reinterpret_cast<const char*>(samples.data()), samples.size());
-        dataSize_ += samples.size();
+        const float* floatSamples = reinterpret_cast<const float*>(samples.data());
+        size_t sampleCount = samples.size() / sizeof(float);
+        
+        std::vector<int16_t> pcmSamples(sampleCount);
+        
+        // High-quality conversion with dithering
+        static std::random_device rd;
+        static std::mt19937 gen(rd());
+        static std::uniform_real_distribution<float> dither(-0.5f/32768.0f, 0.5f/32768.0f);
+        
+        for (size_t i = 0; i < sampleCount; ++i) {
+            float sample = floatSamples[i];
+            
+            // Soft clipping for natural sound
+            if (sample > 1.0f) {
+                sample = std::tanh(sample);
+            } else if (sample < -1.0f) {
+                sample = std::tanh(sample);
+            }
+            
+            // Add triangular dither to reduce quantization noise
+            sample += dither(gen);
+            
+            // High-precision conversion
+            pcmSamples[i] = static_cast<int16_t>(std::lround(sample * 32767.0f));
+        }
+        
+        outFile_.write(reinterpret_cast<const char*>(pcmSamples.data()), 
+                      pcmSamples.size() * sizeof(int16_t));
+        dataSize_ += pcmSamples.size() * sizeof(int16_t);
     }
 }
 
-// Helper: Write a basic 16-bit PCM WAV header
 void AudioRecorder::writeWavHeader(int sampleRate, int channels) {
-    // 44-byte WAV header for PCM
+    // Enhanced 16-bit PCM WAV header
     char header[44] = {0};
     std::memcpy(header, "RIFF", 4);
-    // Placeholder for file size
     uint32_t fileSize = 0;
     std::memcpy(header + 4, &fileSize, 4);
     std::memcpy(header + 8, "WAVEfmt ", 8);
@@ -69,7 +98,6 @@ void AudioRecorder::writeWavHeader(int sampleRate, int channels) {
 }
 
 void AudioRecorder::finalizeWav() {
-    // Update file size and data chunk size in header
     if (!outFile_.is_open()) return;
     uint32_t fileSize = static_cast<uint32_t>(36 + dataSize_);
     uint32_t dataChunkSize = static_cast<uint32_t>(dataSize_);

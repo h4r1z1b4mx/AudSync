@@ -25,12 +25,12 @@ int main(int argc, char* argv[]) {
     std::cout << "AudSync Server - Real-time Audio Streaming Hub" << std::endl;
     std::cout << "Starting server on port: " << port << std::endl;
 
-    // Prompt for sample rate and channels (if server plays/records audio)
-    int sampleRate = 44100;
-    int channels = 1;
-    std::cout << "Enter desired sample rate for recording (e.g., 44100): ";
+    // Enhanced quality settings
+    int sampleRate = 48000;  // Higher quality default
+    int channels = 2;        // Stereo default for better quality
+    std::cout << "Enter desired sample rate for recording (48000 recommended): ";
     std::cin >> sampleRate;
-    std::cout << "Enter number of channels (1=Mono, 2=Stereo, etc.): ";
+    std::cout << "Enter number of channels (2=Stereo recommended): ";
     std::cin >> channels;
 
     // Initialize logger, recorder, jitter buffer
@@ -68,14 +68,17 @@ int main(int argc, char* argv[]) {
         } else if (command == "status") {
             std::cout << "Connected clients: " << server.getConnectedClients() << std::endl;
         } else if (command == "logon") {
-            logger.startLogging("server_session.log");
-            std::cout << "Logging started." << std::endl;
+            std::string logFilename = AudioServer::generateUniqueFilename("server_session", "log");
+            logger.startLogging(logFilename);
+            std::cout << "Logging started: " << logFilename << std::endl;
         } else if (command == "logoff") {
             logger.stopLogging();
             std::cout << "Logging stopped." << std::endl;
         } else if (command == "recstart") {
-            recorder.startRecording("server_audio.wav", sampleRate, channels);
-            std::cout << "Audio recording started." << std::endl;
+            // ✅ Fixed: Generate unique filename with timestamp
+            std::string filename = AudioServer::generateUniqueFilename("server_audio", "wav");
+            recorder.startRecording(filename, sampleRate, channels);
+            std::cout << "Audio recording started: " << filename << std::endl;
         } else if (command == "recstop") {
             recorder.stopRecording();
             std::cout << "Audio recording stopped." << std::endl;
