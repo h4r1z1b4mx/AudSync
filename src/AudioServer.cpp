@@ -70,7 +70,7 @@ size_t AudioServer::getConnectedClients() const {
     std::lock_guard<std::mutex> lock(clients_mutex);
     return clients_.size();
 }
-
+int count = 0;
 void AudioServer::handleClientMessage(const Message& message, SOCKET client_socket) {
     switch (message.type) {
         case MessageType::CONNECT:

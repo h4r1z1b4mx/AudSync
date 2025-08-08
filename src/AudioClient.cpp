@@ -220,7 +220,7 @@ void AudioClient::handleNetworkMessage(const Message& message, int socket_fd) {
     }
 }
 
-// AudioClient.cpp - Fix onAudioCaptured method
+// ✅ FIXED: onAudioCaptured method with proper type handling
 void AudioClient::onAudioCaptured(const float* data, size_t samples) {
     if (!connected_ || !audio_active_) return;
 
@@ -232,10 +232,10 @@ void AudioClient::onAudioCaptured(const float* data, size_t samples) {
     // Send audio data to server
     Message audio_msg;
     audio_msg.type = MessageType::AUDIO_DATA;
-    audio_msg.size = samples * sizeof(float);
+    audio_msg.size = static_cast<uint32_t>(samples * sizeof(float));  // ✅ FIXED: Explicit cast
     audio_msg.data.resize(audio_msg.size);
     audio_msg.timestamp = timestamp;  // ✅ Set real timestamp
-    memcpy(audio_msg.data.data(), data, audio_msg.size);
+    std::memcpy(audio_msg.data.data(), data, audio_msg.size);
     network_manager_.sendMessage(audio_msg);
 
     // Logging with real timestamp
@@ -266,49 +266,94 @@ void AudioClient::networkLoop() {
     }
 }
 
-// Utility to list all input devices using PortAudio
+// ✅ FIXED: Device enumeration methods with accessibility testing
 std::vector<std::string> AudioClient::getInputDeviceNames() {
     std::vector<std::string> devices;
     Pa_Initialize();
+    
     int numDevices = Pa_GetDeviceCount();
     for (int i = 0; i < numDevices; ++i) {
         const PaDeviceInfo* info = Pa_GetDeviceInfo(i);
         if (info && info->maxInputChannels > 0) {
-            std::ostringstream oss;
-            oss << "[" << i << "] " << info->name;
-            devices.push_back(oss.str());
+            // Test device accessibility
+            PaStreamParameters inputParams;
+            inputParams.device = i;
+            inputParams.channelCount = 1;
+            inputParams.sampleFormat = paFloat32;
+            inputParams.suggestedLatency = info->defaultLowInputLatency;
+            inputParams.hostApiSpecificStreamInfo = nullptr;
+            
+            PaStream* testStream;
+            PaError err = Pa_OpenStream(&testStream, &inputParams, nullptr, 
+                                      info->defaultSampleRate, 256, paClipOff, nullptr, nullptr);
+            
+            if (err == paNoError) {
+                Pa_CloseStream(testStream);
+                std::ostringstream oss;
+                oss << "[" << i << "] " << info->name 
+                    << " (Max: " << info->maxInputChannels << " ch, "
+                    << "Default: " << static_cast<int>(info->defaultSampleRate) << "Hz)";  // ✅ FIXED: Cast
+                devices.push_back(oss.str());
+            }
         }
     }
+    
     Pa_Terminate();
     return devices;
 }
 
-// Utility to list all output devices using PortAudio
 std::vector<std::string> AudioClient::getOutputDeviceNames() {
     std::vector<std::string> devices;
     Pa_Initialize();
+    
     int numDevices = Pa_GetDeviceCount();
     for (int i = 0; i < numDevices; ++i) {
         const PaDeviceInfo* info = Pa_GetDeviceInfo(i);
         if (info && info->maxOutputChannels > 0) {
-            std::ostringstream oss;
-            oss << "[" << i << "] " << info->name;
-            devices.push_back(oss.str());
+            // Test device accessibility
+            PaStreamParameters outputParams;
+            outputParams.device = i;
+            outputParams.channelCount = 1;
+            outputParams.sampleFormat = paFloat32;
+            outputParams.suggestedLatency = info->defaultLowOutputLatency;
+            outputParams.hostApiSpecificStreamInfo = nullptr;
+            
+            PaStream* testStream;
+            PaError err = Pa_OpenStream(&testStream, nullptr, &outputParams, 
+                                      info->defaultSampleRate, 256, paClipOff, nullptr, nullptr);
+            
+            if (err == paNoError) {
+                Pa_CloseStream(testStream);
+                std::ostringstream oss;
+                oss << "[" << i << "] " << info->name 
+                    << " (Max: " << info->maxOutputChannels << " ch, "
+                    << "Default: " << static_cast<int>(info->defaultSampleRate) << "Hz)";  // ✅ FIXED: Cast
+                devices.push_back(oss.str());
+            }
         }
     }
+    
     Pa_Terminate();
     return devices;
 }
 
-// Utility to generate unique filenames with timestamp// Add this to both AudioServer.cpp and AudioClient.cpp
+// ✅ FIXED: generateUniqueFilename with safe time handling
 std::string AudioClient::generateUniqueFilename(const std::string& prefix, const std::string& ext) {
     auto now = std::chrono::system_clock::now();
     auto time_t = std::chrono::system_clock::to_time_t(now);
+    
+    // ✅ FIXED: Safe time formatting for Windows
     std::ostringstream oss;
-    oss << std::put_time(std::localtime(&time_t), "%Y%m%d_%H%M%S");
+    #ifdef _WIN32
+        struct tm timeinfo;
+        localtime_s(&timeinfo, &time_t);  // ✅ Use safe version on Windows
+        oss << std::put_time(&timeinfo, "%Y%m%d_%H%M%S");
+    #else
+        oss << std::put_time(std::localtime(&time_t), "%Y%m%d_%H%M%S");
+    #endif
     
     // ✅ SET YOUR DESIRED DIRECTORY HERE
-    std::string directory = "recordings/";  // Change this!
+    std::string directory = "recordings/";  // Change this to your preferred path
     
     #ifdef _WIN32
         CreateDirectoryA(directory.c_str(), NULL);
