@@ -41,6 +41,7 @@ AudioClient::~AudioClient() {
 bool AudioClient::connect(const std::string& server_host, int server_port) {
     if (connected_) return true;
 
+    // FIXED: Complete connect method
     network_manager_.setMessageHandler(
         [this](const Message& msg, int socket) {
             handleNetworkMessage(msg, socket);
@@ -52,12 +53,41 @@ bool AudioClient::connect(const std::string& server_host, int server_port) {
         return false;
     }
 
+    // Send client audio configuration to server
+    Message config_msg;
+    config_msg.type = MessageType::CLIENT_CONFIG;
+    
+    // Pack configuration into message data
+    struct AudioConfig {
+        int32_t sampleRate;
+        int32_t channels;
+        int32_t bufferSize;
+    } config;
+    
+    config.sampleRate = sampleRate_;
+    config.channels = channels_;
+    config.bufferSize = framesPerBuffer_;
+    
+    config_msg.size = sizeof(AudioConfig);
+    config_msg.data.resize(config_msg.size);
+    config_msg.timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::high_resolution_clock::now().time_since_epoch()
+    ).count();
+    
+    std::memcpy(config_msg.data.data(), &config, sizeof(AudioConfig));
+    network_manager_.sendMessage(config_msg);
+    
     connected_ = true;
     running_ = true;
     
     network_thread_ = std::thread(&AudioClient::networkLoop, this);
     
     std::cout << "Connected to server at " << server_host << ":" << server_port << std::endl;
+    std::cout << "Sent configuration:" << std::endl;
+    std::cout << "  Sample Rate: " << sampleRate_ << "Hz" << std::endl;
+    std::cout << "  Channels: " << channels_ << std::endl;
+    std::cout << "  Buffer Size: " << framesPerBuffer_ << " frames" << std::endl;
+    
     return true;
 }
 
@@ -106,6 +136,9 @@ bool AudioClient::startAudio() {
     Message ready_msg;
     ready_msg.type = MessageType::CLIENT_READY;
     ready_msg.size = 0;
+    ready_msg.timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::high_resolution_clock::now().time_since_epoch()
+    ).count();
     network_manager_.sendMessage(ready_msg);
 
     audio_active_ = true;
@@ -211,6 +244,9 @@ void AudioClient::handleNetworkMessage(const Message& message, int socket_fd) {
                 Message response;
                 response.type = MessageType::HEARTBEAT;
                 response.size = 0;
+                response.timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::high_resolution_clock::now().time_since_epoch()
+                ).count();
                 network_manager_.sendMessage(response);
             }
             break;
@@ -220,11 +256,10 @@ void AudioClient::handleNetworkMessage(const Message& message, int socket_fd) {
     }
 }
 
-// ✅ FIXED: onAudioCaptured method with proper type handling
 void AudioClient::onAudioCaptured(const float* data, size_t samples) {
     if (!connected_ || !audio_active_) return;
 
-    // ✅ Generate real timestamp
+    // Generate real timestamp
     uint64_t timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::high_resolution_clock::now().time_since_epoch()
     ).count();
@@ -232,16 +267,16 @@ void AudioClient::onAudioCaptured(const float* data, size_t samples) {
     // Send audio data to server
     Message audio_msg;
     audio_msg.type = MessageType::AUDIO_DATA;
-    audio_msg.size = static_cast<uint32_t>(samples * sizeof(float));  // ✅ FIXED: Explicit cast
+    audio_msg.size = static_cast<uint32_t>(samples * sizeof(float));
     audio_msg.data.resize(audio_msg.size);
-    audio_msg.timestamp = timestamp;  // ✅ Set real timestamp
+    audio_msg.timestamp = timestamp;
     std::memcpy(audio_msg.data.data(), data, audio_msg.size);
     network_manager_.sendMessage(audio_msg);
 
     // Logging with real timestamp
     if (logger_) {
         logger_->logAudioStats(audio_msg.size, sampleRate_, channels_, std::to_string(inputDeviceId_));
-        logger_->logPacketMetadata(timestamp, audio_msg.size);  // ✅ Use real timestamp
+        logger_->logPacketMetadata(timestamp, audio_msg.size);
     }
 
     // Recording
@@ -266,7 +301,6 @@ void AudioClient::networkLoop() {
     }
 }
 
-// ✅ FIXED: Device enumeration methods with accessibility testing
 std::vector<std::string> AudioClient::getInputDeviceNames() {
     std::vector<std::string> devices;
     Pa_Initialize();
@@ -292,7 +326,7 @@ std::vector<std::string> AudioClient::getInputDeviceNames() {
                 std::ostringstream oss;
                 oss << "[" << i << "] " << info->name 
                     << " (Max: " << info->maxInputChannels << " ch, "
-                    << "Default: " << static_cast<int>(info->defaultSampleRate) << "Hz)";  // ✅ FIXED: Cast
+                    << "Default: " << static_cast<int>(info->defaultSampleRate) << "Hz)";
                 devices.push_back(oss.str());
             }
         }
@@ -327,7 +361,7 @@ std::vector<std::string> AudioClient::getOutputDeviceNames() {
                 std::ostringstream oss;
                 oss << "[" << i << "] " << info->name 
                     << " (Max: " << info->maxOutputChannels << " ch, "
-                    << "Default: " << static_cast<int>(info->defaultSampleRate) << "Hz)";  // ✅ FIXED: Cast
+                    << "Default: " << static_cast<int>(info->defaultSampleRate) << "Hz)";
                 devices.push_back(oss.str());
             }
         }
@@ -337,23 +371,20 @@ std::vector<std::string> AudioClient::getOutputDeviceNames() {
     return devices;
 }
 
-// ✅ FIXED: generateUniqueFilename with safe time handling
 std::string AudioClient::generateUniqueFilename(const std::string& prefix, const std::string& ext) {
     auto now = std::chrono::system_clock::now();
     auto time_t = std::chrono::system_clock::to_time_t(now);
     
-    // ✅ FIXED: Safe time formatting for Windows
     std::ostringstream oss;
     #ifdef _WIN32
         struct tm timeinfo;
-        localtime_s(&timeinfo, &time_t);  // ✅ Use safe version on Windows
+        localtime_s(&timeinfo, &time_t);
         oss << std::put_time(&timeinfo, "%Y%m%d_%H%M%S");
     #else
         oss << std::put_time(std::localtime(&time_t), "%Y%m%d_%H%M%S");
     #endif
     
-    // ✅ SET YOUR DESIRED DIRECTORY HERE
-    std::string directory = "recordings/";  // Change this to your preferred path
+    std::string directory = "recordings/";
     
     #ifdef _WIN32
         CreateDirectoryA(directory.c_str(), NULL);

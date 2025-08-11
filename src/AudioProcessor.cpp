@@ -162,6 +162,8 @@ bool AudioProcessor::addPlaybackData(const float* data, size_t samples) {
     return playback_buffer_->write(data, samples);
 }
 
+// In recordCallback function, fix the sample calculation:
+
 int AudioProcessor::recordCallback(const void* inputBuffer, void* outputBuffer,
                                    unsigned long framesPerBuffer,
                                    const PaStreamCallbackTimeInfo* timeInfo,
@@ -174,15 +176,16 @@ int AudioProcessor::recordCallback(const void* inputBuffer, void* outputBuffer,
     AudioProcessor* processor = static_cast<AudioProcessor*>(userData);
     const float* input = static_cast<const float*>(inputBuffer);
 
-    // TODO: Apply echo cancellation/noise suppression here if needed
-
     if (processor->capture_callback_) {
-        processor->capture_callback_(input, framesPerBuffer);
+        // FIXED: Pass correct sample count (frames * channels)
+        size_t totalSamples = framesPerBuffer * processor->channels_;
+        processor->capture_callback_(input, totalSamples);
     }
 
     return paContinue;
 }
 
+// In playCallback function:
 int AudioProcessor::playCallback(const void* inputBuffer, void* outputBuffer,
                                  unsigned long framesPerBuffer,
                                  const PaStreamCallbackTimeInfo* timeInfo,
@@ -196,9 +199,12 @@ int AudioProcessor::playCallback(const void* inputBuffer, void* outputBuffer,
     float* output = static_cast<float*>(outputBuffer);
 
     if (processor->playback_buffer_) {
-        processor->playback_buffer_->read(output, framesPerBuffer);
+        // FIXED: Read correct sample count (frames * channels)
+        size_t totalSamples = framesPerBuffer * processor->channels_;
+        processor->playback_buffer_->read(output, totalSamples);
     } else {
-        memset(output, 0, framesPerBuffer * sizeof(float));
+        // FIXED: Clear correct amount of data
+        memset(output, 0, framesPerBuffer * processor->channels_ * sizeof(float));
     }
 
     return paContinue;
