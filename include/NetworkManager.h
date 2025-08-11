@@ -35,7 +35,8 @@ enum class MessageType : uint8_t {
     DISCONNECT = 2, 
     AUDIO_DATA = 3,
     HEARTBEAT = 4, 
-    CLIENT_READY = 5
+    CLIENT_READY = 5,
+    CLIENT_CONFIG = 6    // ✅ ADDED: Missing message type for client configuration
 };
 
 // Message struct now includes a timestamp for jitter/logging
