@@ -54,6 +54,11 @@ class AudioClient {
     std::atomic<bool> connected_;
     std::atomic<bool> audio_active_;
     std::atomic<bool> running_;
+
+    std::thread jitterBufferThread_;
+    void jitterBufferLoop();
+    void processJitterBuffer();
+    std::atomic<bool> jitterBufferRunning_{false}; 
     
     std::thread network_thread_;
     

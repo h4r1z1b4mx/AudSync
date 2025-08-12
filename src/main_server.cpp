@@ -61,7 +61,7 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    std::cout << "\n✅ Server is running successfully!" << std::endl;
+    std::cout << "\nAudSync Server is running successfully!" << std::endl;
     std::cout << "Clients can connect using: ./audsync_client 127.0.0.1 " << port << std::endl;
     std::cout << "\nType commands during session:" << std::endl;
     std::cout << "  'status'   - Show connected clients" << std::endl;
@@ -80,14 +80,16 @@ int main(int argc, char* argv[]) {
             std::cout << "Connected clients: " << server.getConnectedClients() << std::endl;
             std::cout << "Port: " << port << std::endl;
         } else if (command == "logon") {
-            std::string logFilename = "server_session_" + std::to_string(std::time(nullptr)) + ".log";
+            // FIXED: Use new directory structure for server logs
+            std::string logFilename = SessionLogger::generateLogPath("server_session", false);
             logger.startLogging(logFilename);
             std::cout << "Logging started: " << logFilename << std::endl;
         } else if (command == "logoff") {
             logger.stopLogging();
             std::cout << "Logging stopped." << std::endl;
         } else if (command == "recstart") {
-            std::string filename = "server_audio_" + std::to_string(std::time(nullptr)) + ".wav";
+            // FIXED: Use new directory structure for server recordings
+            std::string filename = AudioRecorder::generateRecordingPath("server_audio", false);
             // Use default configuration for recording
             recorder.startRecording(filename, defaultSampleRate, defaultChannels);
             std::cout << "Recording started: " << filename 

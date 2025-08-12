@@ -1,20 +1,30 @@
 #include "NetworkManager.h"
 #include <iostream>
 #include <cstring>
-#include <chrono>
+#include <algorithm>
 
 NetworkManager::NetworkManager() 
-    : server_socket_(INVALID_SOCKET_VAL), client_socket_(INVALID_SOCKET_VAL), is_server_(false), running_(false) {
-    initializeNetworking();
+    : serverSocket_(INVALID_SOCKET),
+      clientSocket_(INVALID_SOCKET),
+      isServer_(false),
+      isConnected_(false),
+      running_(false) {
+    
+#ifdef _WIN32
+    initializeWinsock();
+#endif
 }
 
 NetworkManager::~NetworkManager() {
-    disconnect();
     stopServer();
-    cleanupNetworking();
+    disconnect();
+    
+#ifdef _WIN32
+    cleanupWinsock();
+#endif
 }
 
-bool NetworkManager::initializeNetworking() {
+bool NetworkManager::initializeWinsock() {
 #ifdef _WIN32
     WSADATA wsaData;
     int result = WSAStartup(MAKEWORD(2, 2), &wsaData);
@@ -26,240 +36,367 @@ bool NetworkManager::initializeNetworking() {
     return true;
 }
 
-void NetworkManager::cleanupNetworking() {
+void NetworkManager::cleanupWinsock() {
 #ifdef _WIN32
     WSACleanup();
 #endif
 }
 
-bool NetworkManager::connectToServer(const std::string& host, int port) {
-    client_socket_ = socket(AF_INET, SOCK_STREAM, 0);
-    if (client_socket_ == INVALID_SOCKET_VAL) {
-        std::cerr << "Failed to create socket" << std::endl;
-        return false;
-    }
-
-    sockaddr_in server_addr{};
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_port = htons(port);
-    
-#ifdef _WIN32
-    if (inet_pton(AF_INET, host.c_str(), &server_addr.sin_addr) <= 0) {
-#else
-    if (inet_pton(AF_INET, host.c_str(), &server_addr.sin_addr) <= 0) {
-#endif
-        std::cerr << "Invalid address" << std::endl;
-        close_socket(client_socket_);
-        client_socket_ = INVALID_SOCKET_VAL;
-        return false;
-    }
-
-    if (connect(client_socket_, (struct sockaddr*)&server_addr, sizeof(server_addr)) == SOCKET_ERROR_VAL) {
-        std::cerr << "Connection failed" << std::endl;
-        close_socket(client_socket_);
-        client_socket_ = INVALID_SOCKET_VAL;
-        return false;
-    }
-
-    // Send connect message
-    Message connect_msg;
-    connect_msg.type = MessageType::CONNECT;
-    connect_msg.size = 0;
-    connect_msg.timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::steady_clock::now().time_since_epoch()).count();
-    
-    return sendMessage(connect_msg, client_socket_);
-}
-
-void NetworkManager::disconnect() {
-    if (client_socket_ != INVALID_SOCKET_VAL) {
-        // Send disconnect message
-        Message disconnect_msg;
-        disconnect_msg.type = MessageType::DISCONNECT;
-        disconnect_msg.size = 0;
-        disconnect_msg.timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::steady_clock::now().time_since_epoch()).count();
-        sendMessage(disconnect_msg, client_socket_);
-        
-        close_socket(client_socket_);
-        client_socket_ = INVALID_SOCKET_VAL;
-    }
-}
-
 bool NetworkManager::startServer(int port) {
-    server_socket_ = socket(AF_INET, SOCK_STREAM, 0);
-    if (server_socket_ == INVALID_SOCKET_VAL) {
+    if (running_) return false;
+    
+    serverSocket_ = socket(AF_INET, SOCK_STREAM, 0);
+    if (serverSocket_ == INVALID_SOCKET) {
         std::cerr << "Failed to create server socket" << std::endl;
         return false;
     }
-
-#ifdef _WIN32
-    char opt = 1;
-    setsockopt(server_socket_, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-#else
+    
+    // Set socket options
     int opt = 1;
-    setsockopt(server_socket_, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-#endif
-
-    sockaddr_in server_addr{};
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_addr.s_addr = INADDR_ANY;
-    server_addr.sin_port = htons(port);
-
-    if (bind(server_socket_, (struct sockaddr*)&server_addr, sizeof(server_addr)) == SOCKET_ERROR_VAL) {
-        std::cerr << "Bind failed" << std::endl;
-        close_socket(server_socket_);
-        server_socket_ = INVALID_SOCKET_VAL;
+    if (setsockopt(serverSocket_, SOL_SOCKET, SO_REUSEADDR, 
+                   reinterpret_cast<const char*>(&opt), sizeof(opt)) < 0) {
+        std::cerr << "Failed to set socket options" << std::endl;
+        closeSocket(serverSocket_);
         return false;
     }
-
-    if (listen(server_socket_, 10) == SOCKET_ERROR_VAL) {
-        std::cerr << "Listen failed" << std::endl;
-        close_socket(server_socket_);
-        server_socket_ = INVALID_SOCKET_VAL;
+    
+    sockaddr_in serverAddr{};
+    serverAddr.sin_family = AF_INET;
+    serverAddr.sin_addr.s_addr = INADDR_ANY;
+    serverAddr.sin_port = htons(static_cast<uint16_t>(port));
+    
+    if (bind(serverSocket_, reinterpret_cast<sockaddr*>(&serverAddr), sizeof(serverAddr)) == SOCKET_ERROR) {
+        std::cerr << "Failed to bind server socket to port " << port << std::endl;
+        closeSocket(serverSocket_);
         return false;
     }
-
-    is_server_ = true;
+    
+    if (listen(serverSocket_, 5) == SOCKET_ERROR) {
+        std::cerr << "Failed to listen on server socket" << std::endl;
+        closeSocket(serverSocket_);
+        return false;
+    }
+    
+    isServer_ = true;
     running_ = true;
-    accept_thread_ = std::thread(&NetworkManager::acceptClients, this);
-
+    serverThread_ = std::thread(&NetworkManager::serverLoop, this);
+    
     std::cout << "Server started on port " << port << std::endl;
     return true;
 }
 
 void NetworkManager::stopServer() {
+    if (!running_ || !isServer_) return;
+    
     running_ = false;
     
-    if (server_socket_ != INVALID_SOCKET_VAL) {
-        close_socket(server_socket_);
-        server_socket_ = INVALID_SOCKET_VAL;
+    // Close all client connections
+    {
+        std::lock_guard<std::mutex> lock(clientsMutex_);
+        for (SOCKET client : connectedClients_) {
+            closeSocket(client);
+        }
+        connectedClients_.clear();
     }
     
-    if (accept_thread_.joinable()) {
-        accept_thread_.join();
+    closeSocket(serverSocket_);
+    
+    if (serverThread_.joinable()) {
+        serverThread_.join();
     }
     
-    is_server_ = false;
+    if (clientHandlerThread_.joinable()) {
+        clientHandlerThread_.join();
+    }
+    
+    isServer_ = false;
+    std::cout << "Server stopped" << std::endl;
 }
 
-// Updated to send timestamp
-bool NetworkManager::sendMessage(const Message& message, SOCKET socket_fd) {
-    SOCKET target_socket = (socket_fd != INVALID_SOCKET_VAL) ? socket_fd : client_socket_;
-    if (target_socket == INVALID_SOCKET_VAL) return false;
-
-    // Send header
-    uint8_t type = static_cast<uint8_t>(message.type);
-    if (!sendRaw(&type, sizeof(type), target_socket)) return false;
-    if (!sendRaw(&message.size, sizeof(message.size), target_socket)) return false;
-    if (!sendRaw(&message.timestamp, sizeof(message.timestamp), target_socket)) return false;
-
-    // Send data if any
-    if (message.size > 0) {
-        return sendRaw(message.data.data(), message.size, target_socket);
+bool NetworkManager::connectToServer(const std::string& host, int port) {
+    if (isConnected_) return true;
+    
+    clientSocket_ = socket(AF_INET, SOCK_STREAM, 0);
+    if (clientSocket_ == INVALID_SOCKET) {
+        std::cerr << "Failed to create client socket" << std::endl;
+        return false;
     }
-
+    
+    sockaddr_in serverAddr{};
+    serverAddr.sin_family = AF_INET;
+    serverAddr.sin_port = htons(static_cast<uint16_t>(port));
+    
+    if (inet_pton(AF_INET, host.c_str(), &serverAddr.sin_addr) <= 0) {
+        std::cerr << "Invalid server address: " << host << std::endl;
+        closeSocket(clientSocket_);
+        return false;
+    }
+    
+    if (connect(clientSocket_, reinterpret_cast<sockaddr*>(&serverAddr), sizeof(serverAddr)) == SOCKET_ERROR) {
+        std::cerr << "Failed to connect to server " << host << ":" << port << std::endl;
+        closeSocket(clientSocket_);
+        return false;
+    }
+    
+    isConnected_ = true;
+    running_ = true;
+    
+    // Send connect message
+    if (messageHandler_) {
+        Message connectMsg;
+        connectMsg.type = MessageType::CONNECT;
+        connectMsg.size = 0;
+        connectMsg.timestamp = 0;
+        messageHandler_(connectMsg, clientSocket_);
+    }
+    
+    std::cout << "Connected to server " << host << ":" << port << std::endl;
     return true;
 }
 
-// Updated to receive timestamp
-bool NetworkManager::receiveMessage(Message& message, SOCKET socket_fd) {
-    SOCKET target_socket = (socket_fd != INVALID_SOCKET_VAL) ? socket_fd : client_socket_;
-    if (target_socket == INVALID_SOCKET_VAL) return false;
-
-    // Receive header
-    uint8_t type;
-    if (!receiveRaw(&type, sizeof(type), target_socket)) return false;
-    if (!receiveRaw(&message.size, sizeof(message.size), target_socket)) return false;
-    if (!receiveRaw(&message.timestamp, sizeof(message.timestamp), target_socket)) return false;
-
-    message.type = static_cast<MessageType>(type);
-    message.data.clear();
-
-    // Receive data if any
-    if (message.size > 0) {
-        message.data.resize(message.size);
-        return receiveRaw(message.data.data(), message.size, target_socket);
+void NetworkManager::disconnect() {
+    if (!isConnected_) return;
+    
+    running_ = false;
+    
+    // Send disconnect message
+    if (messageHandler_) {
+        Message disconnectMsg;
+        disconnectMsg.type = MessageType::DISCONNECT;
+        disconnectMsg.size = 0;
+        disconnectMsg.timestamp = 0;
+        messageHandler_(disconnectMsg, clientSocket_);
     }
-
-    return true;
+    
+    closeSocket(clientSocket_);
+    isConnected_ = false;
+    
+    std::cout << "Disconnected from server" << std::endl;
 }
 
-void NetworkManager::setMessageHandler(std::function<void(const Message&, SOCKET)> handler) {
-    message_handler_ = handler;
-}
-
-bool NetworkManager::isConnected() const {
-    return client_socket_ != INVALID_SOCKET_VAL || (is_server_ && running_);
-}
-
-void NetworkManager::acceptClients() {
+void NetworkManager::serverLoop() {
     while (running_) {
-        sockaddr_in client_addr{};
-        socklen_t client_len = sizeof(client_addr);
+        sockaddr_in clientAddr{};
+        socklen_t clientLen = sizeof(clientAddr);
         
-        SOCKET client_fd = accept(server_socket_, (struct sockaddr*)&client_addr, &client_len);
-        if (client_fd == INVALID_SOCKET_VAL) {
+        SOCKET clientSocket = accept(serverSocket_, reinterpret_cast<sockaddr*>(&clientAddr), &clientLen);
+        if (clientSocket == INVALID_SOCKET) {
             if (running_) {
-                std::cerr << "Accept failed" << std::endl;
+                std::cerr << "Failed to accept client connection" << std::endl;
             }
             continue;
         }
-
-        std::cout << "Client connected: " << client_fd << std::endl;
-        std::thread(&NetworkManager::handleClient, this, client_fd).detach();
+        
+        {
+            std::lock_guard<std::mutex> lock(clientsMutex_);
+            connectedClients_.push_back(clientSocket);
+        }
+        
+        // Handle client in separate thread
+        std::thread clientThread(&NetworkManager::handleClient, this, clientSocket);
+        clientThread.detach();
+        
+        // Notify about new connection
+        if (messageHandler_) {
+            Message connectMsg;
+            connectMsg.type = MessageType::CONNECT;
+            connectMsg.size = 0;
+            connectMsg.timestamp = 0;
+            messageHandler_(connectMsg, clientSocket);
+        }
     }
 }
 
-void NetworkManager::handleClient(SOCKET client_fd) {
+void NetworkManager::handleClient(SOCKET clientSocket) {
     while (running_) {
         Message message;
-        if (receiveMessage(message, client_fd)) {
-            if (message_handler_) {
-                message_handler_(message, client_fd);
-            }
-            
-            if (message.type == MessageType::DISCONNECT) {
-                break;
+        if (receiveMessage(message, clientSocket)) {
+            if (messageHandler_) {
+                messageHandler_(message, clientSocket);
             }
         } else {
-            break;
+            break; // Client disconnected
         }
     }
     
-    close_socket(client_fd);
-    std::cout << "Client disconnected: " << client_fd << std::endl;
+    // Remove client from list
+    {
+        std::lock_guard<std::mutex> lock(clientsMutex_);
+        connectedClients_.erase(
+            std::remove(connectedClients_.begin(), connectedClients_.end(), clientSocket),
+            connectedClients_.end()
+        );
+    }
+    
+    // Notify about disconnection
+    if (messageHandler_) {
+        Message disconnectMsg;
+        disconnectMsg.type = MessageType::DISCONNECT;
+        disconnectMsg.size = 0;
+        disconnectMsg.timestamp = 0;
+        messageHandler_(disconnectMsg, clientSocket);
+    }
+    
+    closeSocket(clientSocket);
 }
 
-bool NetworkManager::sendRaw(const void* data, size_t size, SOCKET socket_fd) {
-    size_t sent = 0;
-    const char* ptr = static_cast<const char*>(data);
+bool NetworkManager::sendMessage(const Message& message, SOCKET clientSocket) {
+    std::vector<uint8_t> buffer;
+    if (!serializeMessage(message, buffer)) {
+        return false;
+    }
     
-    while (sent < size) {
-#ifdef _WIN32
-        int result = send(socket_fd, ptr + sent, static_cast<int>(size - sent), 0);
-#else
-        ssize_t result = send(socket_fd, ptr + sent, size - sent, 0);
-#endif
-        if (result <= 0) return false;
-        sent += result;
+    return sendRawData(clientSocket, buffer.data(), buffer.size());
+}
+
+bool NetworkManager::sendMessage(const Message& message) {
+    if (!isConnected_) return false;
+    return sendMessage(message, clientSocket_);
+}
+
+bool NetworkManager::receiveMessage(Message& message) {
+    if (!isConnected_) return false;
+    return receiveMessage(message, clientSocket_);
+}
+
+bool NetworkManager::receiveMessage(Message& message, SOCKET socket) {
+    // Receive header (type, size, timestamp)
+    struct MessageHeader {
+        uint32_t type;
+        uint32_t size;
+        uint64_t timestamp;
+    } header;
+    
+    if (!receiveRawData(socket, &header, sizeof(header))) {
+        return false;
+    }
+    
+    message.type = static_cast<MessageType>(header.type);
+    message.size = header.size;
+    message.timestamp = header.timestamp;
+    
+    // Receive data if present
+    if (message.size > 0) {
+        message.data.resize(message.size);
+        if (!receiveRawData(socket, message.data.data(), message.size)) {
+            return false;
+        }
+    } else {
+        message.data.clear();
     }
     
     return true;
 }
 
-bool NetworkManager::receiveRaw(void* data, size_t size, SOCKET socket_fd) {
-    size_t received = 0;
-    char* ptr = static_cast<char*>(data);
+void NetworkManager::setMessageHandler(MessageHandler handler) {
+    messageHandler_ = handler;
+}
+
+bool NetworkManager::isConnected() const {
+    return isConnected_;
+}
+
+bool NetworkManager::sendRawData(SOCKET socket, const void* data, size_t size) {
+    const char* bytes = static_cast<const char*>(data);
+    size_t totalSent = 0;
     
-    while (received < size) {
-#ifdef _WIN32
-        int result = recv(socket_fd, ptr + received, static_cast<int>(size - received), 0);
-#else
-        ssize_t result = recv(socket_fd, ptr + received, size - received, 0);
-#endif
-        if (result <= 0) return false;
-        received += result;
+    while (totalSent < size) {
+        int sent = send(socket, bytes + totalSent, static_cast<int>(size - totalSent), 0);
+        if (sent == SOCKET_ERROR) {
+            std::cerr << "Failed to send data" << std::endl;
+            return false;
+        }
+        totalSent += sent;
+    }
+    
+    return true;
+}
+
+bool NetworkManager::receiveRawData(SOCKET socket, void* data, size_t size) {
+    char* bytes = static_cast<char*>(data);
+    size_t totalReceived = 0;
+    
+    while (totalReceived < size) {
+        int received = recv(socket, bytes + totalReceived, static_cast<int>(size - totalReceived), 0);
+        if (received <= 0) {
+            if (received == 0) {
+                std::cout << "Client disconnected" << std::endl;
+            } else {
+                std::cerr << "Failed to receive data" << std::endl;
+            }
+            return false;
+        }
+        totalReceived += received;
+    }
+    
+    return true;
+}
+
+void NetworkManager::closeSocket(SOCKET& socket) {
+    if (socket != INVALID_SOCKET) {
+        closesocket(socket);
+        socket = INVALID_SOCKET;
+    }
+}
+
+bool NetworkManager::serializeMessage(const Message& message, std::vector<uint8_t>& buffer) {
+    // Calculate total size: header + data
+    size_t totalSize = sizeof(uint32_t) + sizeof(uint32_t) + sizeof(uint64_t) + message.size;
+    buffer.resize(totalSize);
+    
+    size_t offset = 0;
+    
+    // Serialize type
+    uint32_t type = static_cast<uint32_t>(message.type);
+    std::memcpy(buffer.data() + offset, &type, sizeof(uint32_t));
+    offset += sizeof(uint32_t);
+    
+    // Serialize size
+    std::memcpy(buffer.data() + offset, &message.size, sizeof(uint32_t));
+    offset += sizeof(uint32_t);
+    
+    // Serialize timestamp
+    std::memcpy(buffer.data() + offset, &message.timestamp, sizeof(uint64_t));
+    offset += sizeof(uint64_t);
+    
+    // Serialize data
+    if (message.size > 0) {
+        std::memcpy(buffer.data() + offset, message.data.data(), message.size);
+    }
+    
+    return true;
+}
+
+bool NetworkManager::deserializeMessage(const std::vector<uint8_t>& buffer, Message& message) {
+    if (buffer.size() < sizeof(uint32_t) + sizeof(uint32_t) + sizeof(uint64_t)) {
+        return false;
+    }
+    
+    size_t offset = 0;
+    
+    // Deserialize type
+    uint32_t type;
+    std::memcpy(&type, buffer.data() + offset, sizeof(uint32_t));
+    message.type = static_cast<MessageType>(type);
+    offset += sizeof(uint32_t);
+    
+    // Deserialize size
+    std::memcpy(&message.size, buffer.data() + offset, sizeof(uint32_t));
+    offset += sizeof(uint32_t);
+    
+    // Deserialize timestamp
+    std::memcpy(&message.timestamp, buffer.data() + offset, sizeof(uint64_t));
+    offset += sizeof(uint64_t);
+    
+    // Deserialize data
+    if (message.size > 0) {
+        if (buffer.size() < offset + message.size) {
+            return false;
+        }
+        message.data.resize(message.size);
+        std::memcpy(message.data.data(), buffer.data() + offset, message.size);
+    } else {
+        message.data.clear();
     }
     
     return true;

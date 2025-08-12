@@ -1,16 +1,12 @@
 #include "AudioClient.h"
+#include "AudioRecorder.h"
+#include "SessionLogger.h"
 #include <iostream>
 #include <cstring>
 #include <chrono>
 #include <iomanip>
 #include <sstream>
 #include <portaudio.h>
-
-#ifdef _WIN32
-    #include <windows.h>  // For CreateDirectoryA
-#else
-    #include <sys/stat.h> // For mkdir
-#endif
 
 // Updated constructor to include output device and buffer size
 AudioClient::AudioClient(int inputDeviceId,
@@ -191,8 +187,10 @@ void AudioClient::run() {
             }
         } else if (command == "logon") {
             if (logger_) {
-                logger_->startLogging(generateUniqueFilename("client_session", "log"));
-                std::cout << "Logging started." << std::endl;
+                // FIXED: Use new directory structure for client logs
+                std::string logPath = SessionLogger::generateLogPath("client_session", true);
+                logger_->startLogging(logPath);
+                std::cout << "Logging started: " << logPath << std::endl;
             }
         } else if (command == "logoff") {
             if (logger_) {
@@ -201,8 +199,10 @@ void AudioClient::run() {
             }
         } else if (command == "recstart") {
             if (recorder_) {
-                recorder_->startRecording(generateUniqueFilename("client_audio", "wav"), sampleRate_, channels_);
-                std::cout << "Audio recording started." << std::endl;
+                // FIXED: Use new directory structure for client recordings
+                std::string recordPath = AudioRecorder::generateRecordingPath("client_audio", true);
+                recorder_->startRecording(recordPath, sampleRate_, channels_);
+                std::cout << "Audio recording started: " << recordPath << std::endl;
             }
         } else if (command == "recstop") {
             if (recorder_) {
@@ -371,26 +371,4 @@ std::vector<std::string> AudioClient::getOutputDeviceNames() {
     return devices;
 }
 
-std::string AudioClient::generateUniqueFilename(const std::string& prefix, const std::string& ext) {
-    auto now = std::chrono::system_clock::now();
-    auto time_t = std::chrono::system_clock::to_time_t(now);
-    
-    std::ostringstream oss;
-    #ifdef _WIN32
-        struct tm timeinfo;
-        localtime_s(&timeinfo, &time_t);
-        oss << std::put_time(&timeinfo, "%Y%m%d_%H%M%S");
-    #else
-        oss << std::put_time(std::localtime(&time_t), "%Y%m%d_%H%M%S");
-    #endif
-    
-    std::string directory = "recordings/";
-    
-    #ifdef _WIN32
-        CreateDirectoryA(directory.c_str(), NULL);
-    #else
-        mkdir(directory.c_str(), 0755);
-    #endif
-    
-    return directory + prefix + "_" + oss.str() + "." + ext;
-}
+// REMOVED: generateUniqueFilename - now using AudioRecorder::generateRecordingPath and SessionLogger::generateLogPath

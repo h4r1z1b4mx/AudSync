@@ -1,17 +1,11 @@
 #include "AudioServer.h"
+#include "AudioRecorder.h"
+#include "SessionLogger.h"
 #include <iostream>
 #include <algorithm>
 #include <chrono>
 #include <iomanip>
 #include <sstream>
-
-#ifdef _WIN32
-    #include <windows.h>  // For CreateDirectoryA
-#else
-    #include <sys/stat.h> // For mkdir
-#endif
-
-// REMOVED: AudioConfig struct - it should be in AudioServer.h instead
 
 // Updated constructor to accept buffer size and output device (future use)
 AudioServer::AudioServer(int sampleRate,
@@ -279,27 +273,4 @@ void AudioServer::printClientDetails() const {
     }
 }
 
-// Utility to generate unique filenames with timestamp
-std::string AudioServer::generateUniqueFilename(const std::string& prefix, const std::string& ext) {
-    auto now = std::chrono::system_clock::now();
-    auto time_t = std::chrono::system_clock::to_time_t(now);
-    
-    std::ostringstream oss;
-    #ifdef _WIN32
-        struct tm timeinfo;
-        localtime_s(&timeinfo, &time_t);
-        oss << std::put_time(&timeinfo, "%Y%m%d_%H%M%S");
-    #else
-        oss << std::put_time(std::localtime(&time_t), "%Y%m%d_%H%M%S");
-    #endif
-    
-    std::string directory = "recordings/";
-    
-    #ifdef _WIN32
-        CreateDirectoryA(directory.c_str(), NULL);
-    #else
-        mkdir(directory.c_str(), 0755);
-    #endif
-    
-    return directory + prefix + "_" + oss.str() + "." + ext;
-}
+// REMOVED: generateUniqueFilename - now using AudioRecorder::generateRecordingPath and SessionLogger::generateLogPath

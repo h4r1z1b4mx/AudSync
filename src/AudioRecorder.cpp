@@ -3,6 +3,18 @@
 #include <algorithm>
 #include <cmath>
 #include <random>
+#include <chrono>
+#include <iomanip>
+#include <sstream>
+#include <filesystem>
+
+#ifdef _WIN32
+    #include <windows.h>
+    #include <direct.h>
+#else
+    #include <sys/stat.h>
+    #include <unistd.h>
+#endif
 
 AudioRecorder::AudioRecorder()
     : recording_(false), dataSize_(0), sampleRate_(0), channels_(0) {}
@@ -13,6 +25,10 @@ AudioRecorder::~AudioRecorder() {
 
 bool AudioRecorder::startRecording(const std::string& filename, int sampleRate, int channels) {
     std::lock_guard<std::mutex> lock(mutex_);
+    
+    // ADDED: Ensure directories exist before opening file
+    createRecordingDirectories();
+    
     outFile_.open(filename, std::ios::binary);
     if (!outFile_.is_open()) return false;
     recording_ = true;
@@ -70,6 +86,52 @@ void AudioRecorder::writeSamples(const std::vector<uint8_t>& samples) {
                       pcmSamples.size() * sizeof(int16_t));
         dataSize_ += pcmSamples.size() * sizeof(int16_t);
     }
+}
+
+// ADDED: Generate recording file path with proper directory structure
+std::string AudioRecorder::generateRecordingPath(const std::string& prefix, bool isClient) {
+    auto now = std::chrono::system_clock::now();
+    auto time_t = std::chrono::system_clock::to_time_t(now);
+    
+    std::ostringstream oss;
+    #ifdef _WIN32
+        struct tm timeinfo;
+        localtime_s(&timeinfo, &time_t);
+        oss << std::put_time(&timeinfo, "%Y%m%d_%H%M%S");
+    #else
+        oss << std::put_time(std::localtime(&time_t), "%Y%m%d_%H%M%S");
+    #endif
+    
+    // FIXED: Use root directory structure
+    std::string baseDir = "recordings";
+    std::string subDir = isClient ? "client" : "server";
+    
+    return baseDir + "/" + subDir + "/" + prefix + "_" + oss.str() + ".wav";
+}
+
+// ADDED: Create all necessary recording directories
+bool AudioRecorder::createRecordingDirectories() {
+    std::vector<std::string> dirsToCreate = {
+        "recordings",
+        "recordings/client", 
+        "recordings/server"
+    };
+    
+    for (const auto& dir : dirsToCreate) {
+        #ifdef _WIN32
+            if (_mkdir(dir.c_str()) != 0 && errno != EEXIST) {
+                // Directory creation failed and it doesn't already exist
+                continue;
+            }
+        #else
+            if (mkdir(dir.c_str(), 0755) != 0 && errno != EEXIST) {
+                // Directory creation failed and it doesn't already exist
+                continue;
+            }
+        #endif
+    }
+    
+    return true; // Return true even if some directories already exist
 }
 
 void AudioRecorder::writeWavHeader(int sampleRate, int channels) {
