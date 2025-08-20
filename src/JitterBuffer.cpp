@@ -54,7 +54,7 @@ bool JitterBuffer::getPacket(AudioPacket& packet) {
     seenSequences_.erase(packet.sequenceNumber);
     
     // ADDED: Apply audio filters before returning packet
-    applyAudioFilters(packet);
+    //applyAudioFilters(packet);
     
     return true;
 }

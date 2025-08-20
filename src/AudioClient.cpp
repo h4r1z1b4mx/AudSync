@@ -128,12 +128,12 @@ bool AudioClient::startAudio() {
     // FIXED: Optimal jitter buffer configuration for voice quality
     if (jitterBuffer_) {
         jitterBuffer_->clear();  // Clear any old data
-        jitterBuffer_->setMinBufferSize(3);   // REDUCED: Faster start (3 packets ~8.7ms)
+        jitterBuffer_->setMinBufferSize(5);   // REDUCED: Faster start (5 packets ~8.7ms)
         jitterBuffer_->setMaxBufferSize(64);  // REDUCED: Lower latency
         jitterBufferReady_ = false;
         incomingSequenceNumber_ = 0;  // Reset sequence
-        
-        std::cout << "Jitter buffer configured: min=3, max=64 packets (optimized for voice)" << std::endl;
+
+        std::cout << "Jitter buffer configured: min=5, max=64 packets (optimized for voice)" << std::endl;
     }
 
     audio_processor_.setAudioCaptureCallback(
@@ -348,7 +348,7 @@ void AudioClient::processJitterBuffer() {
     
     // ENHANCED: Timeout-based buffer management
     if (!jitterBufferReady_) {
-        if (currentBufferSize >= 3) {
+        if (currentBufferSize >= 5) {
             jitterBufferReady_ = true;
             lastPacketTime_ = std::chrono::steady_clock::now();
             std::cout << "Jitter buffer ready - " << currentBufferSize << " packets buffered" << std::endl;
@@ -400,21 +400,22 @@ void AudioClient::processJitterBuffer() {
 // ADDED: Voice-specific audio filters
 void AudioClient::applyVoiceFilters(float* data, size_t samples) {
     // 1. Noise Gate - Remove background noise
-    applyNoiseGate(data, samples);
+//     applyNoiseGate(data, samples);
+       return;
+//     // 2. Voice EQ - Enhance voice frequencies
+//     applyVoiceEQ(data, samples);
     
-    // 2. Voice EQ - Enhance voice frequencies
-    applyVoiceEQ(data, samples);
+//     // 3. Compressor - Even out volume levels
+//     applyCompressor(data, samples);
     
-    // 3. Compressor - Even out volume levels
-    applyCompressor(data, samples);
-    
-    // 4. De-esser - Reduce harsh sibilant sounds
-    applyDeEsser(data, samples);
+//     // 4. De-esser - Reduce harsh sibilant sounds
+//     applyDeEsser(data, samples);
+// 
 }
 
 void AudioClient::applyNoiseGate(float* data, size_t samples) {
-    const float threshold = 0.005f; // Very sensitive gate
-    const float ratio = 0.05f;      // Heavy reduction
+    const float threshold = 0.002f; // REDUCED: Less aggressive
+    const float ratio = 0.3f;       // REDUCED: Gentler reduction
     
     for (size_t i = 0; i < samples; ++i) {
         if (std::abs(data[i]) < threshold) {
@@ -424,21 +425,19 @@ void AudioClient::applyNoiseGate(float* data, size_t samples) {
 }
 
 void AudioClient::applyVoiceEQ(float* data, size_t samples) {
-    // Simple voice presence boost (around 1-3kHz)
-    static float hp_last = 0.0f, lp_last = 0.0f;
-    
+    // FIXED: Use instance variables instead of static
     for (size_t i = 0; i < samples; ++i) {
         // Highpass at ~200Hz
-        float hp_out = 0.98f * (hp_last + data[i] - data[i]);
-        hp_last = data[i];
+        float hp_out = 0.98f * (filterState_.hp_last + data[i] - data[i]);
+        filterState_.hp_last = data[i];
         
         // Boost mid frequencies slightly
         float boosted = hp_out * 1.2f;
         
         // Gentle lowpass at ~4kHz
-        lp_last = 0.8f * lp_last + 0.2f * boosted;
+        filterState_.lp_last = 0.8f * filterState_.lp_last + 0.2f * boosted;
         
-        data[i] = lp_last;
+        data[i] = filterState_.lp_last;
     }
 }
 
@@ -450,10 +449,10 @@ void AudioClient::applyVoiceEQ(float* data, size_t samples) {
      *
      * @param data The audio data to be processed
      * @param samples The number of samples in the data array
-     */
+    */
 void AudioClient::applyCompressor(float* data, size_t samples) {
-    const float threshold = 0.3f;
-    const float ratio = 0.25f; // 4:1 compression
+    const float threshold = 0.5f;   // INCREASED: Higher threshold
+    const float ratio = 0.5f;       // INCREASED: 2:1 compression (gentler)
     
     for (size_t i = 0; i < samples; ++i) {
         float abs_val = std::abs(data[i]);
