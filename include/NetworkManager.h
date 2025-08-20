@@ -5,84 +5,93 @@
 #include <functional>
 #include <thread>
 #include <atomic>
-#include <cstdint>
+#include <mutex>
 
-// Cross-platform socket includes
 #ifdef _WIN32
-    #ifndef WIN32_LEAN_AND_MEAN
-    #define WIN32_LEAN_AND_MEAN
-    #endif
     #include <winsock2.h>
     #include <ws2tcpip.h>
     #pragma comment(lib, "ws2_32.lib")
     typedef int socklen_t;
-    #define SOCKET_ERROR_VAL SOCKET_ERROR
-    #define INVALID_SOCKET_VAL INVALID_SOCKET
-    #define close_socket closesocket
 #else
     #include <sys/socket.h>
     #include <netinet/in.h>
     #include <arpa/inet.h>
     #include <unistd.h>
+    #include <netdb.h>
     typedef int SOCKET;
-    #define SOCKET_ERROR_VAL -1
-    #define INVALID_SOCKET_VAL -1
-    #define close_socket close
+    #define INVALID_SOCKET -1
+    #define SOCKET_ERROR -1
+    #define closesocket close
 #endif
 
-enum class MessageType : uint8_t {
+enum class MessageType : uint32_t {
     CONNECT = 1,
-    DISCONNECT = 2, 
+    DISCONNECT = 2,
     AUDIO_DATA = 3,
-    HEARTBEAT = 4, 
-    CLIENT_READY = 5
+    CLIENT_CONFIG = 4,
+    CLIENT_READY = 5,
+    HEARTBEAT = 6
 };
 
-// Message struct now includes a timestamp for jitter/logging
 struct Message {
     MessageType type;
     uint32_t size;
+    uint64_t timestamp;
     std::vector<uint8_t> data;
-    uint64_t timestamp; // Added for jitter/logging/recording
+    
+    Message() : type(MessageType::CONNECT), size(0), timestamp(0) {}
 };
 
 class NetworkManager {
-  public: 
+public:
+    using MessageHandler = std::function<void(const Message&, SOCKET)>;
+
     NetworkManager();
     ~NetworkManager();
 
-    //client Methods
-    bool connectToServer(const std::string& host, int port);
-    void disconnect();
-
-    //server methods
+    // Server methods
     bool startServer(int port);
     void stopServer();
+    bool sendMessage(const Message& message, SOCKET clientSocket);
     
-    //common methods
-    bool sendMessage(const Message& message, SOCKET socket_fd = INVALID_SOCKET_VAL);
-    bool receiveMessage(Message& message, SOCKET socket_fd = INVALID_SOCKET_VAL);
+    // Client methods
+    bool connectToServer(const std::string& host, int port);
+    void disconnect();
+    bool sendMessage(const Message& message);
+    bool receiveMessage(Message& message);
+    bool receiveMessage(Message& message, SOCKET socket);  // ← ADD THIS LINE
     
-    void setMessageHandler(std::function<void(const Message&, SOCKET)> handler);
+    // Common methods
+    void setMessageHandler(MessageHandler handler);
     bool isConnected() const;
 
-    SOCKET getClientSocket() const {return client_socket_;}
-
-  private:
-    SOCKET server_socket_;
-    SOCKET client_socket_;
-    std::atomic<bool> is_server_;
+private:
+    // Network state
+    SOCKET serverSocket_;
+    SOCKET clientSocket_;
+    std::atomic<bool> isServer_;
+    std::atomic<bool> isConnected_;
     std::atomic<bool> running_;
-
-    std::thread accept_thread_;
-    std::function<void(const Message&, SOCKET)> message_handler_;
-
-    void acceptClients();
-    void handleClient(SOCKET client_fd);
-    bool sendRaw(const void* data, size_t size, SOCKET socket_fd);
-    bool receiveRaw(void* data, size_t size, SOCKET socket_fd);
     
-    // Cross-platform socket initialization
-    bool initializeNetworking();
-    void cleanupNetworking();
+    // Threading
+    std::thread serverThread_;
+    std::thread clientHandlerThread_;
+    std::mutex clientsMutex_;
+    
+    // Message handling
+    MessageHandler messageHandler_;
+    std::vector<SOCKET> connectedClients_;
+    
+    // Internal methods
+    void serverLoop();
+    void handleClient(SOCKET clientSocket);
+    bool initializeWinsock();
+    void cleanupWinsock();
+    bool sendRawData(SOCKET socket, const void* data, size_t size);
+    bool receiveRawData(SOCKET socket, void* data, size_t size);
+    void closeSocket(SOCKET& socket);
+    
+    // Message serialization
+    bool serializeMessage(const Message& message, std::vector<uint8_t>& buffer);
+    bool deserializeMessage(const std::vector<uint8_t>& buffer, Message& message);
 };

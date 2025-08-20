@@ -15,6 +15,10 @@ public:
 
     void writeSamples(const std::vector<uint8_t>& samples);
 
+    // ADDED: Static methods for directory management
+    static std::string generateRecordingPath(const std::string& prefix, bool isClient = true);
+    static bool createRecordingDirectories();
+
 private:
     void writeWavHeader(int sampleRate, int channels);
     void finalizeWav();

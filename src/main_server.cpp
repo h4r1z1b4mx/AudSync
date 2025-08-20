@@ -5,6 +5,7 @@
 #include <iostream>
 #include <signal.h>
 #include <string>
+#include <iomanip>
 
 AudioServer* g_server = nullptr;
 
@@ -20,25 +21,35 @@ int main(int argc, char* argv[]) {
     int port = 8080;
     if (argc >= 2) {
         port = std::stoi(argv[1]);
+        if (port < 1024 || port > 65535) {
+            std::cerr << "Invalid port number. Using default 8080." << std::endl;
+            port = 8080;
+        }
     }
 
     std::cout << "AudSync Server - Real-time Audio Streaming Hub" << std::endl;
     std::cout << "Starting server on port: " << port << std::endl;
+    std::cout << "\nThe server will automatically adapt to each client's audio format." << std::endl;
+    std::cout << "No server-side audio configuration needed." << std::endl;
+    
+    std::cout << "\nStart server? (y/n): ";
+    char confirm;
+    std::cin >> confirm;
+    if (confirm != 'y' && confirm != 'Y') {
+        std::cout << "Server startup cancelled." << std::endl;
+        return 0;
+    }
 
-    // Prompt for sample rate and channels (if server plays/records audio)
-    int sampleRate = 44100;
-    int channels = 1;
-    std::cout << "Enter desired sample rate for recording (e.g., 44100): ";
-    std::cin >> sampleRate;
-    std::cout << "Enter number of channels (1=Mono, 2=Stereo, etc.): ";
-    std::cin >> channels;
-
-    // Initialize logger, recorder, jitter buffer
+    // Initialize components
     SessionLogger logger;
     AudioRecorder recorder;
     JitterBuffer jitterBuffer;
 
-    AudioServer server(sampleRate, channels, &logger, &recorder, &jitterBuffer);
+    // ✅ FIXED: Use correct AudioServer constructor with required parameters
+    int defaultSampleRate = 48000;  // Default, will be overridden by clients
+    int defaultChannels = 2;        // Default, will be overridden by clients
+    
+    AudioServer server(defaultSampleRate, defaultChannels, &logger, &recorder, &jitterBuffer);
     g_server = &server;
 
     // Set up signal handler for graceful shutdown
@@ -50,48 +61,48 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    std::cout << "Server is running. Press Ctrl + C to stop" << std::endl;
-    std::cout << "Client can connect using: ./audsync_client <server_ip> " << port << std::endl;
-    std::cout << "Type commands during session:" << std::endl;
-    std::cout << "  status    - Show server status" << std::endl;
-    std::cout << "  logon     - Start logging" << std::endl;
-    std::cout << "  logoff    - Stop logging" << std::endl;
-    std::cout << "  recstart  - Start recording session" << std::endl;
-    std::cout << "  recstop   - Stop recording session" << std::endl;
-    std::cout << "  quit      - Stop server and exit" << std::endl;
-    std::cout << "  help      - Show this help" << std::endl;
+    std::cout << "\nAudSync Server is running successfully!" << std::endl;
+    std::cout << "Clients can connect using: ./audsync_client 127.0.0.1 " << port << std::endl;
+    std::cout << "\nType commands during session:" << std::endl;
+    std::cout << "  'status'   - Show connected clients" << std::endl;
+    std::cout << "  'logon'    - Start logging" << std::endl;
+    std::cout << "  'logoff'   - Stop logging" << std::endl;
+    std::cout << "  'recstart' - Start recording" << std::endl;
+    std::cout << "  'recstop'  - Stop recording" << std::endl;
+    std::cout << "  'quit'     - Stop server and exit" << std::endl;
 
     std::string command;
     while (server.isRunning() && std::cin >> command) {
         if (command == "quit" || command == "stop") {
             break;
         } else if (command == "status") {
+            std::cout << "=== SERVER STATUS ===" << std::endl;
             std::cout << "Connected clients: " << server.getConnectedClients() << std::endl;
+            std::cout << "Port: " << port << std::endl;
         } else if (command == "logon") {
-            logger.startLogging("server_session.log");
-            std::cout << "Logging started." << std::endl;
+            // FIXED: Use new directory structure for server logs
+            std::string logFilename = SessionLogger::generateLogPath("server_session", false);
+            logger.startLogging(logFilename);
+            std::cout << "Logging started: " << logFilename << std::endl;
         } else if (command == "logoff") {
             logger.stopLogging();
             std::cout << "Logging stopped." << std::endl;
         } else if (command == "recstart") {
-            recorder.startRecording("server_audio.wav", sampleRate, channels);
-            std::cout << "Audio recording started." << std::endl;
+            // FIXED: Use new directory structure for server recordings
+            std::string filename = AudioRecorder::generateRecordingPath("server_audio", false);
+            // Use default configuration for recording
+            recorder.startRecording(filename, defaultSampleRate, defaultChannels);
+            std::cout << "Recording started: " << filename 
+                      << " (" << defaultSampleRate << "Hz, " 
+                      << defaultChannels << " channels)" << std::endl;
         } else if (command == "recstop") {
             recorder.stopRecording();
-            std::cout << "Audio recording stopped." << std::endl;
-        } else if (command == "help") {
-            std::cout << "Commands:" << std::endl;
-            std::cout << "  status    - Show server status" << std::endl;
-            std::cout << "  logon     - Start logging" << std::endl;
-            std::cout << "  logoff    - Stop logging" << std::endl;
-            std::cout << "  recstart  - Start recording session" << std::endl;
-            std::cout << "  recstop   - Stop recording session" << std::endl;
-            std::cout << "  quit      - Stop server and exit" << std::endl;
-            std::cout << "  help      - Show this help" << std::endl;
+            std::cout << "Recording stopped." << std::endl;
         } else {
-            std::cout << "Unknown command. Type 'help' for available commands." << std::endl;
+            std::cout << "Unknown command: '" << command << "'. Type 'quit' to exit." << std::endl;
         }
     }
+    
     std::cout << "Server shutting down... " << std::endl;
     return 0;
 }
