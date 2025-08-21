@@ -4,7 +4,7 @@
 #include <iostream> 
 
 JitterBuffer::JitterBuffer(size_t maxBufferSize)
-    : maxBufferSize_(maxBufferSize), minBufferSize_(5) {} // REDUCED: 5 packets minimum
+    : maxBufferSize_(maxBufferSize), minBufferSize_(2) {} // REDUCED: 3 packets minimum
 
 void JitterBuffer::addPacket(const AudioPacket& packet) {
     std::lock_guard<std::mutex> lock(mutex_);

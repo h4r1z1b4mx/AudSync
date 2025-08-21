@@ -128,12 +128,12 @@ bool AudioClient::startAudio() {
     // FIXED: Optimal jitter buffer configuration for voice quality
     if (jitterBuffer_) {
         jitterBuffer_->clear();  // Clear any old data
-        jitterBuffer_->setMinBufferSize(5);   // REDUCED: Faster start (5 packets ~8.7ms)
-        jitterBuffer_->setMaxBufferSize(64);  // REDUCED: Lower latency
+        jitterBuffer_->setMinBufferSize(2);   // REDUCED: Faster start (2 packets ~5.8ms)
+        jitterBuffer_->setMaxBufferSize(32);  // REDUCED: Lower latency
         jitterBufferReady_ = false;
         incomingSequenceNumber_ = 0;  // Reset sequence
 
-        std::cout << "Jitter buffer configured: min=5, max=64 packets (optimized for voice)" << std::endl;
+        std::cout << "Jitter buffer configured: min=2, max=32 packets (optimized for voice)" << std::endl;
     }
 
     audio_processor_.setAudioCaptureCallback(
@@ -348,7 +348,7 @@ void AudioClient::processJitterBuffer() {
     
     // ENHANCED: Timeout-based buffer management
     if (!jitterBufferReady_) {
-        if (currentBufferSize >= 5) {
+        if (currentBufferSize >= 2) {
             jitterBufferReady_ = true;
             lastPacketTime_ = std::chrono::steady_clock::now();
             std::cout << "Jitter buffer ready - " << currentBufferSize << " packets buffered" << std::endl;
