@@ -4,7 +4,7 @@
 #include <iostream> 
 
 JitterBuffer::JitterBuffer(size_t maxBufferSize)
-    : maxBufferSize_(maxBufferSize), minBufferSize_(2) {} // REDUCED: 3 packets minimum
+    : maxBufferSize_(maxBufferSize), minBufferSize_(2) {} // REDUCED: 2 packets minimum
 
 void JitterBuffer::addPacket(const AudioPacket& packet) {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -60,89 +60,89 @@ bool JitterBuffer::getPacket(AudioPacket& packet) {
 }
 
 // ADDED: Audio filtering methods
-void JitterBuffer::applyAudioFilters(AudioPacket& packet) {
-    if (packet.data.size() < sizeof(float)) return;
+// void JitterBuffer::applyAudioFilters(AudioPacket& packet) {
+//     if (packet.data.size() < sizeof(float)) return;
     
-    float* audioData = reinterpret_cast<float*>(packet.data.data());
-    size_t samples = packet.data.size() / sizeof(float);
+//     float* audioData = reinterpret_cast<float*>(packet.data.data());
+//     size_t samples = packet.data.size() / sizeof(float);
     
-    // Apply multiple filters for better voice quality
-    applyNoiseGate(audioData, samples);
-    applyBandpassFilter(audioData, samples);
-    applyVolumeNormalization(audioData, samples);
-    applyAntiClipping(audioData, samples);
-}
+//     // Apply multiple filters for better voice quality
+//     applyNoiseGate(audioData, samples);
+//     applyBandpassFilter(audioData, samples);
+//     applyVolumeNormalization(audioData, samples);
+//     applyAntiClipping(audioData, samples);
+// }
 
-void JitterBuffer::applyNoiseGate(float* data, size_t samples) {
-    const float threshold = 0.01f; // Noise gate threshold
-    const float ratio = 0.1f;      // Reduction ratio
+// void JitterBuffer::applyNoiseGate(float* data, size_t samples) {
+//     const float threshold = 0.01f; // Noise gate threshold
+//     const float ratio = 0.1f;      // Reduction ratio
     
-    for (size_t i = 0; i < samples; ++i) {
-        float absValue = std::abs(data[i]);
-        if (absValue < threshold) {
-            data[i] *= ratio; // Reduce low-level noise
-        }
-    }
-}
+//     for (size_t i = 0; i < samples; ++i) {
+//         float absValue = std::abs(data[i]);
+//         if (absValue < threshold) {
+//             data[i] *= ratio; // Reduce low-level noise
+//         }
+//     }
+// }
 
-void JitterBuffer::applyBandpassFilter(float* data, size_t samples) {
-    // Simple highpass filter to remove low-frequency noise
-    const float alpha = 0.95f; // Highpass cutoff (~100Hz at 44.1kHz)
-    static float lastInput = 0.0f;
-    static float lastOutput = 0.0f;
+// void JitterBuffer::applyBandpassFilter(float* data, size_t samples) {
+//     // Simple highpass filter to remove low-frequency noise
+//     const float alpha = 0.95f; // Highpass cutoff (~100Hz at 44.1kHz)
+//     static float lastInput = 0.0f;
+//     static float lastOutput = 0.0f;
     
-    for (size_t i = 0; i < samples; ++i) {
-        float output = alpha * (lastOutput + data[i] - lastInput);
-        lastInput = data[i];
-        lastOutput = output;
-        data[i] = output;
-    }
+//     for (size_t i = 0; i < samples; ++i) {
+//         float output = alpha * (lastOutput + data[i] - lastInput);
+//         lastInput = data[i];
+//         lastOutput = output;
+//         data[i] = output;
+//     }
     
-    // Simple lowpass filter to remove high-frequency noise
-    const float beta = 0.7f; // Lowpass cutoff (~3.5kHz at 44.1kHz)
-    static float lpLastOutput = 0.0f;
+//     // Simple lowpass filter to remove high-frequency noise
+//     const float beta = 0.7f; // Lowpass cutoff (~3.5kHz at 44.1kHz)
+//     static float lpLastOutput = 0.0f;
     
-    for (size_t i = 0; i < samples; ++i) {
-        lpLastOutput = beta * lpLastOutput + (1.0f - beta) * data[i];
-        data[i] = lpLastOutput;
-    }
-}
+//     for (size_t i = 0; i < samples; ++i) {
+//         lpLastOutput = beta * lpLastOutput + (1.0f - beta) * data[i];
+//         data[i] = lpLastOutput;
+//     }
+// }
 
-void JitterBuffer::applyVolumeNormalization(float* data, size_t samples) {
-    // Calculate RMS level
-    float rms = 0.0f;
-    for (size_t i = 0; i < samples; ++i) {
-        rms += data[i] * data[i];
-    }
-    rms = std::sqrt(rms / samples);
+// void JitterBuffer::applyVolumeNormalization(float* data, size_t samples) {
+//     // Calculate RMS level
+//     float rms = 0.0f;
+//     for (size_t i = 0; i < samples; ++i) {
+//         rms += data[i] * data[i];
+//     }
+//     rms = std::sqrt(rms / samples);
     
-    // Target RMS level for voice
-    const float targetRMS = 0.2f;
+//     // Target RMS level for voice
+//     const float targetRMS = 0.2f;
     
-    if (rms > 0.001f) { // Avoid division by zero
-        float gain = targetRMS / rms;
+//     if (rms > 0.001f) { // Avoid division by zero
+//         float gain = targetRMS / rms;
         
-        // Limit gain to prevent over-amplification
-        gain = std::min(gain, 3.0f);
-        gain = std::max(gain, 0.3f);
+//         // Limit gain to prevent over-amplification
+//         gain = std::min(gain, 3.0f);
+//         gain = std::max(gain, 0.3f);
         
-        // Apply gentle gain adjustment
-        for (size_t i = 0; i < samples; ++i) {
-            data[i] *= gain;
-        }
-    }
-}
+//         // Apply gentle gain adjustment
+//         for (size_t i = 0; i < samples; ++i) {
+//             data[i] *= gain;
+//         }
+//     }
+// }
 
-void JitterBuffer::applyAntiClipping(float* data, size_t samples) {
-    // Soft limiting to prevent clipping
-    for (size_t i = 0; i < samples; ++i) {
-        if (data[i] > 0.95f) {
-            data[i] = 0.95f + 0.05f * std::tanh((data[i] - 0.95f) / 0.05f);
-        } else if (data[i] < -0.95f) {
-            data[i] = -0.95f + 0.05f * std::tanh((data[i] + 0.95f) / 0.05f);
-        }
-    }
-}
+// void JitterBuffer::applyAntiClipping(float* data, size_t samples) {
+//     // Soft limiting to prevent clipping
+//     for (size_t i = 0; i < samples; ++i) {
+//         if (data[i] > 0.95f) {
+//             data[i] = 0.95f + 0.05f * std::tanh((data[i] - 0.95f) / 0.05f);
+//         } else if (data[i] < -0.95f) {
+//             data[i] = -0.95f + 0.05f * std::tanh((data[i] + 0.95f) / 0.05f);
+//         }
+//     }
+// }
 
 void JitterBuffer::clear() {
     std::lock_guard<std::mutex> lock(mutex_);
