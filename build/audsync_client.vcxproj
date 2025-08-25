@@ -410,13 +410,12 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="D:\AudSync-cross\src\AudioClient.cpp" />
-    <ClCompile Include="D:\AudSync-cross\src\AudioProcessor.cpp" />
-    <ClCompile Include="D:\AudSync-cross\src\main_client.cpp" />
-    <ClCompile Include="D:\AudSync-cross\src\AudioBuffer.cpp" />
-    <ClCompile Include="D:\AudSync-cross\src\NetworkManager.cpp" />
-    <ClCompile Include="D:\AudSync-cross\src\SessionLogger.cpp" />
-    <ClCompile Include="D:\AudSync-cross\src\AudioRecorder.cpp" />
-    <ClCompile Include="D:\AudSync-cross\src\JitterBuffer.cpp" />
+    <ClCompile Include="D:\AudSync-cross\src\main_simple.cpp" />
+    <ClCompile Include="D:\AudSync-cross\src\Message.cpp" />
+    <ClCompile Include="D:\AudSync-cross\src\CaptureSource.cpp" />
+    <ClCompile Include="D:\AudSync-cross\src\CaptureSink.cpp" />
+    <ClCompile Include="D:\AudSync-cross\src\RenderSource.cpp" />
+    <ClCompile Include="D:\AudSync-cross\src\RenderSink.cpp" />
   </ItemGroup>
   <ItemGroup />
   <ItemGroup>

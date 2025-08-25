@@ -3,7 +3,7 @@ project(AudSync)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-
+              
 # Include platform-specific configurations
 if(WIN32)
     include(cmake/WindowsConfig.cmake OPTIONAL)
@@ -17,35 +17,25 @@ find_package(Threads REQUIRED)
 # Include directories
 include_directories(include)
 
-
-# Source files
+# Source files - Proper 4-module architecture
 set(COMMON_SOURCES
-    src/AudioBuffer.cpp
-    src/NetworkManager.cpp
-    src/SessionLogger.cpp
-    src/AudioRecorder.cpp
-    src/JitterBuffer.cpp
+    src/Message.cpp
+    src/CaptureSource.cpp
+    src/CaptureSink.cpp
+    src/RenderSource.cpp
+    src/RenderSink.cpp
 )
 
 set(CLIENT_SOURCES
     src/AudioClient.cpp
-    src/AudioProcessor.cpp
-    src/main_client.cpp
+    src/main_simple.cpp
     ${COMMON_SOURCES}
 )
 
+# Server sources - dedicated AudioServer
 set(SERVER_SOURCES
     src/AudioServer.cpp
-    src/main_server.cpp
-    ${COMMON_SOURCES}
-)
-
-set(COMMON_SOURCES
-    src/AudioBuffer.cpp
-    src/NetworkManager.cpp
-    src/SessionLogger.cpp
-    src/AudioRecorder.cpp
-    src/JitterBuffer.cpp
+    src/Message.cpp
 )
 
 # Platform-specific network libraries
@@ -102,6 +92,7 @@ target_link_libraries(audsync_server
 # Add macOS frameworks if available
 if(APPLE AND MACOS_AUDIO_FRAMEWORKS)
     target_link_libraries(audsync_client ${MACOS_AUDIO_FRAMEWORKS})
+    # Server doesn't need audio frameworks
 endif()
 
 # Cross-platform compiler flags

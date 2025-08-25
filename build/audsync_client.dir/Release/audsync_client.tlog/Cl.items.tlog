@@ -1,8 +1,7 @@
 D:\AudSync-cross\src\AudioClient.cpp;D:\AudSync-cross\build\audsync_client.dir\Release\AudioClient.obj
-D:\AudSync-cross\src\AudioProcessor.cpp;D:\AudSync-cross\build\audsync_client.dir\Release\AudioProcessor.obj
-D:\AudSync-cross\src\main_client.cpp;D:\AudSync-cross\build\audsync_client.dir\Release\main_client.obj
-D:\AudSync-cross\src\AudioBuffer.cpp;D:\AudSync-cross\build\audsync_client.dir\Release\AudioBuffer.obj
-D:\AudSync-cross\src\NetworkManager.cpp;D:\AudSync-cross\build\audsync_client.dir\Release\NetworkManager.obj
-D:\AudSync-cross\src\SessionLogger.cpp;D:\AudSync-cross\build\audsync_client.dir\Release\SessionLogger.obj
-D:\AudSync-cross\src\AudioRecorder.cpp;D:\AudSync-cross\build\audsync_client.dir\Release\AudioRecorder.obj
-D:\AudSync-cross\src\JitterBuffer.cpp;D:\AudSync-cross\build\audsync_client.dir\Release\JitterBuffer.obj
+D:\AudSync-cross\src\main_simple.cpp;D:\AudSync-cross\build\audsync_client.dir\Release\main_simple.obj
+D:\AudSync-cross\src\Message.cpp;D:\AudSync-cross\build\audsync_client.dir\Release\Message.obj
+D:\AudSync-cross\src\CaptureSource.cpp;D:\AudSync-cross\build\audsync_client.dir\Release\CaptureSource.obj
+D:\AudSync-cross\src\CaptureSink.cpp;D:\AudSync-cross\build\audsync_client.dir\Release\CaptureSink.obj
+D:\AudSync-cross\src\RenderSource.cpp;D:\AudSync-cross\build\audsync_client.dir\Release\RenderSource.obj
+D:\AudSync-cross\src\RenderSink.cpp;D:\AudSync-cross\build\audsync_client.dir\Release\RenderSink.obj

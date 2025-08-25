@@ -1,276 +1,285 @@
-#include "AudioServer.h"
-#include "AudioRecorder.h"
-#include "SessionLogger.h"
 #include <iostream>
+#include <vector>
+#include <thread>
+#include <mutex>
+#include <map>
 #include <algorithm>
-#include <chrono>
-#include <iomanip>
-#include <sstream>
+#include <atomic>
+#include <string>
+#include "Message.h"
 
-// Updated constructor to accept buffer size and output device (future use)
-AudioServer::AudioServer(int sampleRate,
-                         int channels,
-                         SessionLogger* logger,
-                         AudioRecorder* recorder,
-                         JitterBuffer* jitterBuffer)
-    : sampleRate_(sampleRate),
-      channels_(channels),
-      logger_(logger),
-      recorder_(recorder),
-      jitterBuffer_(jitterBuffer),
-      running_(false) {}
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#pragma comment(lib, "ws2_32.lib")
+typedef int socklen_t;
+#define close closesocket
+#else
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <unistd.h>
+#endif
 
-AudioServer::~AudioServer() {
-    stop();
-}
+class AudioServer {
+private:
+    int server_socket_;
+    std::vector<int> client_sockets_;
+    std::mutex clients_mutex_;
+    std::atomic<bool> running_;
+    std::thread accept_thread_;
+    std::vector<std::thread> client_threads_;
 
-bool AudioServer::start(int port){
-    if (running_) return true;
-  
-    network_manager_.setMessageHandler(
-        [this] (const Message& msg, int socket) {
-            handleClientMessage(msg, socket);
+public:
+    AudioServer() : server_socket_(-1), running_(false) {
+#ifdef _WIN32
+        WSADATA wsaData;
+        WSAStartup(MAKEWORD(2, 2), &wsaData);
+#endif
+    }
+
+    ~AudioServer() {
+        stop();
+#ifdef _WIN32
+        WSACleanup();
+#endif
+    }
+
+    bool start(int port) {
+        // Create server socket
+        server_socket_ = socket(AF_INET, SOCK_STREAM, 0);
+        if (server_socket_ < 0) {
+            std::cerr << "Failed to create server socket" << std::endl;
+            return false;
         }
-    );
-    if (!network_manager_.startServer(port)) {
-        std::cerr << "Failed to start server on port " << port << std::endl;
-        return false;
-    }
 
-    running_ = true;
-    server_thread_ = std::thread(&AudioServer::serverLoop, this);
-    std::cout << "AudSync Server started on port " << port << std::endl;
-    return true;
-}
+        // Enable address reuse
+        int opt = 1;
+#ifdef _WIN32
+        setsockopt(server_socket_, SOL_SOCKET, SO_REUSEADDR, (char*)&opt, sizeof(opt));
+#else
+        setsockopt(server_socket_, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+#endif
 
-void AudioServer::stop() {
-    if (!running_) return;
-    running_ = false;
-  
-    network_manager_.stopServer();
+        // Bind socket
+        struct sockaddr_in server_addr;
+        server_addr.sin_family = AF_INET;
+        server_addr.sin_addr.s_addr = INADDR_ANY;
+        server_addr.sin_port = htons(static_cast<u_short>(port));
 
-    if(server_thread_.joinable()){
-        server_thread_.join();
-    }
-  
-    std::lock_guard<std::mutex> lock(clients_mutex_);
-    clients_.clear();
-    std::cout <<"Server stopped" << std::endl;
-}
-
-bool AudioServer::isRunning() const {
-    return running_;
-}
-
-size_t AudioServer::getConnectedClients() const {
-    std::lock_guard<std::mutex> lock(clients_mutex_);
-    return clients_.size();
-}
-
-void AudioServer::handleClientMessage(const Message& message, SOCKET client_socket) {
-    switch (message.type) {
-        case MessageType::CONNECT:
-            addClient(client_socket);
-            std::cout << "Client " << client_socket << " connected. Total clients: " 
-                      << getConnectedClients() << std::endl;
-            break;
-            
-        case MessageType::DISCONNECT:
-            removeClient(client_socket);
-            std::cout << "Client " << client_socket << " disconnected. Total clients: " 
-                      << getConnectedClients() << std::endl;
-            break;
-
-        case MessageType::CLIENT_CONFIG:
-            // Handle client audio configuration
-            {
-                if (message.size >= sizeof(AudioConfig)) {
-                    const AudioConfig* config = reinterpret_cast<const AudioConfig*>(message.data.data());
-                    std::lock_guard<std::mutex> lock(clients_mutex_);
-                    auto it = std::find_if(clients_.begin(), clients_.end(),
-                        [client_socket](const ClientInfo& client) {
-                            return client.socket_fd == client_socket;
-                        });
-                    if (it != clients_.end()) {
-                        it->sampleRate = config->sampleRate;
-                        it->channels = config->channels;
-                        it->bufferSize = config->bufferSize;
-                        std::cout << "Client " << client_socket << " configuration received:" << std::endl;
-                        std::cout << "  Sample Rate: " << config->sampleRate << "Hz" << std::endl;
-                        std::cout << "  Channels: " << config->channels << std::endl;
-                        std::cout << "  Buffer Size: " << config->bufferSize << " frames" << std::endl;
-                        
-                        // Calculate and display packet info
-                        size_t packetSize = config->bufferSize * config->channels * sizeof(float);
-                        float latency = static_cast<float>(config->bufferSize) / config->sampleRate * 1000;
-                        std::cout << "  Packet Size: " << packetSize << " bytes" << std::endl;
-                        std::cout << "  Latency: " << std::fixed << std::setprecision(1) << latency << "ms" << std::endl;
-                    }
-                }
-            }
-            break;
-            
-        case MessageType::CLIENT_READY:
-            {
-                std::lock_guard<std::mutex> lock(clients_mutex_);
-                auto it = std::find_if(clients_.begin(), clients_.end(),
-                    [client_socket](const ClientInfo& client) {
-                        return client.socket_fd == client_socket;
-                    });
-                if (it != clients_.end()) {
-                    it->ready = true;
-                    std::cout << "Client " << client_socket << " is ready for audio streaming" << std::endl;
-                }
-            }
-            break;
-            
-        case MessageType::AUDIO_DATA:
-            {
-                // Get client's actual audio parameters for proper logging
-                int clientSampleRate = sampleRate_;  // default fallback
-                int clientChannels = channels_;      // default fallback
-                
-                {
-                    std::lock_guard<std::mutex> lock(clients_mutex_);
-                    auto it = std::find_if(clients_.begin(), clients_.end(),
-                        [client_socket](const ClientInfo& client) {
-                            return client.socket_fd == client_socket;
-                        });
-                    if (it != clients_.end()) {
-                        clientSampleRate = it->sampleRate;
-                        clientChannels = it->channels;
-                    }
-                }
-                
-                // Logging with correct client parameters
-                if (logger_) {
-                    logger_->logAudioStats(message.size, clientSampleRate, clientChannels, std::to_string(client_socket));
-                    logger_->logPacketMetadata(message.timestamp, message.size);
-                }
-                
-                // Recording with client's audio format
-                if (recorder_ && recorder_->isRecording()) {
-                    std::vector<uint8_t> raw(message.data.begin(), message.data.end());
-                    recorder_->writeSamples(raw);
-                }
-                
-                // Jitter buffer integration
-                if (jitterBuffer_) {
-                    AudioPacket pkt;
-                    pkt.data = message.data;
-                    pkt.timestamp = message.timestamp;
-                    jitterBuffer_->addPacket(pkt);
-                }
-                
-                // Broadcast audio to other clients
-                broadcastAudioToOthers(message, client_socket);
-            }
-            break;
-            
-        case MessageType::HEARTBEAT:
-            // Echo heartbeat back to client
-            network_manager_.sendMessage(message, client_socket);
-            break;
-            
-        default:
-            std::cout << "Unknown message type received from client " << client_socket << std::endl;
-            break;
-    }
-}
-
-void AudioServer::broadcastAudioToOthers(const Message& message, SOCKET sender_socket) {
-    std::lock_guard<std::mutex> lock(clients_mutex_);
-    for(const auto& client: clients_) {
-        if(client.socket_fd != sender_socket && client.ready) {
-            network_manager_.sendMessage(message, client.socket_fd);
+        if (bind(server_socket_, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
+            std::cerr << "Failed to bind socket to port " << port << std::endl;
+            close(server_socket_);
+            return false;
         }
-    }
-}
 
-void AudioServer::addClient(SOCKET socket_fd) {
-    std::lock_guard<std::mutex> lock(clients_mutex_);
-    ClientInfo client;
-    client.socket_fd = socket_fd;
-    client.ready = false;
-    client.id = "client_" + std::to_string(socket_fd);
-    // Initialize with default values - will be updated by CLIENT_CONFIG
-    client.sampleRate = sampleRate_;
-    client.channels = channels_;
-    client.bufferSize = 256;  // default buffer size
-    clients_.push_back(client);
-}
-
-void AudioServer::removeClient(SOCKET socket_fd) {
-    std::lock_guard<std::mutex> lock(clients_mutex_);
-    clients_.erase(
-        std::remove_if(clients_.begin(), clients_.end(),
-            [socket_fd](const ClientInfo& client) {
-                return client.socket_fd == socket_fd;
-            }),
-        clients_.end()
-    );
-}
-
-void AudioServer::serverLoop() {
-    std::cout << "Server loop started. Waiting for clients..." << std::endl;
-    while (running_) {
-        std::this_thread::sleep_for(std::chrono::seconds(1));
-        static int counter = 0;
-        if (++counter >= 30) {
-            counter = 0;
-            size_t clientCount = getConnectedClients();
-            if (clientCount > 0) {
-                std::cout << "Server status: " << clientCount << " clients connected" << std::endl;
-                
-                // Show client details every 30 seconds
-                std::lock_guard<std::mutex> lock(clients_mutex_);
-                for (const auto& client : clients_) {
-                    std::cout << "  Client " << client.socket_fd << ": " 
-                              << client.sampleRate << "Hz, " 
-                              << client.channels << " channels, "
-                              << (client.ready ? "ready" : "not ready") << std::endl;
-                }
-            }
+        // Listen for connections
+        if (listen(server_socket_, 10) < 0) {
+            std::cerr << "Failed to listen on socket" << std::endl;
+            close(server_socket_);
+            return false;
         }
-    }
-}
 
-// Helper method to get client configurations (for main_server.cpp)
-std::vector<AudioConfig> AudioServer::getClientConfigurations() const {
-    std::vector<AudioConfig> configs;
-    std::lock_guard<std::mutex> lock(clients_mutex_);
-    for (const auto& client : clients_) {
-        AudioConfig config;
-        config.sampleRate = client.sampleRate;
-        config.channels = client.channels;
-        config.bufferSize = client.bufferSize;
-        configs.push_back(config);
-    }
-    return configs;
-}
+        running_ = true;
+        accept_thread_ = std::thread(&AudioServer::acceptClients, this);
 
-// Method to print detailed client information
-void AudioServer::printClientDetails() const {
-    std::lock_guard<std::mutex> lock(clients_mutex_);
-    if (clients_.empty()) {
-        std::cout << "No clients connected." << std::endl;
-        return;
+        std::cout << "🚀 Audio Server started on port " << port << std::endl;
+        std::cout << "📡 Waiting for clients to connect..." << std::endl;
+        return true;
     }
-    
-    for (const auto& client : clients_) {
-        std::cout << "Client " << client.socket_fd << " (" << client.id << "):" << std::endl;
-        std::cout << "  Audio Format: " << client.sampleRate << "Hz, " 
-                  << client.channels << " channels" << std::endl;
-        std::cout << "  Buffer Size: " << client.bufferSize << " frames" << std::endl;
-        std::cout << "  Status: " << (client.ready ? "Ready for streaming" : "Not ready") << std::endl;
+
+    void stop() {
+        running_ = false;
         
-        // Calculate packet info
-        size_t packetSize = client.bufferSize * client.channels * sizeof(float);
-        float latency = static_cast<float>(client.bufferSize) / client.sampleRate * 1000;
-        std::cout << "  Packet Size: " << packetSize << " bytes" << std::endl;
-        std::cout << "  Latency: " << std::fixed << std::setprecision(1) << latency << "ms" << std::endl;
-        std::cout << std::endl;
-    }
-}
+        // Close all client sockets
+        {
+            std::lock_guard<std::mutex> lock(clients_mutex_);
+            for (int socket : client_sockets_) {
+                close(socket);
+            }
+            client_sockets_.clear();
+        }
 
-// REMOVED: generateUniqueFilename - now using AudioRecorder::generateRecordingPath and SessionLogger::generateLogPath
+        // Close server socket
+        if (server_socket_ >= 0) {
+            close(server_socket_);
+            server_socket_ = -1;
+        }
+
+        // Wait for threads
+        if (accept_thread_.joinable()) {
+            accept_thread_.join();
+        }
+
+        for (auto& thread : client_threads_) {
+            if (thread.joinable()) {
+                thread.join();
+            }
+        }
+        client_threads_.clear();
+
+        std::cout << "🛑 Audio Server stopped" << std::endl;
+    }
+
+    void printStatus() {
+        std::lock_guard<std::mutex> lock(clients_mutex_);
+        std::cout << "📊 Server Status: " << client_sockets_.size() << " clients connected" << std::endl;
+    }
+
+private:
+    void acceptClients() {
+        while (running_) {
+            struct sockaddr_in client_addr;
+            socklen_t client_len = sizeof(client_addr);
+            
+            int client_socket = accept(server_socket_, (struct sockaddr*)&client_addr, &client_len);
+            if (client_socket < 0) {
+                if (running_) {
+                    std::cerr << "Failed to accept client connection" << std::endl;
+                }
+                continue;
+            }
+
+#ifdef _WIN32
+            char client_ip[INET_ADDRSTRLEN];
+            inet_ntop(AF_INET, &client_addr.sin_addr, client_ip, INET_ADDRSTRLEN);
+            std::cout << "✅ Client connected from " << client_ip 
+                      << ":" << ntohs(client_addr.sin_port) << std::endl;
+#else
+            std::cout << "✅ Client connected from " << inet_ntoa(client_addr.sin_addr) 
+                      << ":" << ntohs(client_addr.sin_port) << std::endl;
+#endif
+
+            // Add client to list
+            {
+                std::lock_guard<std::mutex> lock(clients_mutex_);
+                client_sockets_.push_back(client_socket);
+            }
+
+            // Start client handler thread
+            client_threads_.emplace_back(&AudioServer::handleClient, this, client_socket);
+            
+            printStatus();
+        }
+    }
+
+    void handleClient(int client_socket) {
+        std::cout << "🔄 Started handling client on socket " << client_socket << std::endl;
+        
+        while (running_) {
+            // Try to receive a complete message
+            MessageHeader header;
+            
+            // Receive message header
+            int received = recv(client_socket, reinterpret_cast<char*>(&header), sizeof(header), 0);
+            if (received <= 0) break;
+            
+            // Validate magic number
+            if (header.magic != 0x41554453) {
+                std::cerr << "Invalid magic number from client" << std::endl;
+                break;
+            }
+            
+            // Calculate data size
+            uint32_t dataSize = header.length - sizeof(MessageHeader);
+            
+            // Create message and set header
+            Message message(header.type);
+            message.setSequence(header.sequence);
+            message.setTimestamp(header.timestamp);
+            
+            // Receive data if present
+            if (dataSize > 0) {
+                std::vector<uint8_t> buffer(dataSize);
+                received = recv(client_socket, reinterpret_cast<char*>(buffer.data()), dataSize, 0);
+                if (received <= 0) break;
+                
+                message.setData(buffer.data(), dataSize);
+            }
+
+            // Relay audio data to all other clients
+            if (message.getType() == MessageType::AUDIO_DATA) {
+                relayAudioToOtherClients(client_socket, message);
+            } else if (message.getType() == MessageType::HEARTBEAT) {
+                // Send heartbeat response back to sender
+                sendMessage(client_socket, message);
+            }
+        }
+
+        // Remove client from list
+        {
+            std::lock_guard<std::mutex> lock(clients_mutex_);
+            auto it = std::find(client_sockets_.begin(), client_sockets_.end(), client_socket);
+            if (it != client_sockets_.end()) {
+                client_sockets_.erase(it);
+            }
+        }
+
+        close(client_socket);
+        std::cout << "❌ Client disconnected from socket " << client_socket << std::endl;
+        printStatus();
+    }
+
+    void relayAudioToOtherClients(int sender_socket, const Message& message) {
+        std::lock_guard<std::mutex> lock(clients_mutex_);
+        
+        int relayed_count = 0;
+        for (int client_socket : client_sockets_) {
+            if (client_socket != sender_socket) {  // Don't echo back to sender
+                if (sendMessage(client_socket, message)) {
+                    relayed_count++;
+                }
+            }
+        }
+        
+        // Optional: Print relay stats every 100 messages
+        static int message_count = 0;
+        if (++message_count % 100 == 0) {
+            std::cout << "📡 Relayed " << message_count << " audio packets to " << relayed_count << " clients" << std::endl;
+        }
+    }
+
+    bool sendMessage(int client_socket, const Message& message) {
+        // Serialize the message
+        std::vector<uint8_t> serialized = message.serialize();
+        
+        // Send the complete serialized message
+        int sent = send(client_socket, reinterpret_cast<const char*>(serialized.data()), serialized.size(), 0);
+        return sent == static_cast<int>(serialized.size());
+    }
+};
+
+int main(int argc, char* argv[]) {
+    int port = 12345;
+    
+    if (argc > 1) {
+        port = std::atoi(argv[1]);
+    }
+
+    std::cout << "🎵 AudSync Audio Server" << std::endl;
+    std::cout << "========================" << std::endl;
+
+    AudioServer server;
+    
+    if (!server.start(port)) {
+        std::cerr << "❌ Failed to start server on port " << port << std::endl;
+        return 1;
+    }
+
+    std::cout << "\n🎵 Audio Server Running!" << std::endl;
+    std::cout << "📋 Instructions:" << std::endl;
+    std::cout << "   1. Run first client:  .\\audsync_client.exe" << std::endl;
+    std::cout << "   2. Run second client: .\\audsync_client.exe" << std::endl;
+    std::cout << "   3. In each client:" << std::endl;
+    std::cout << "      - Type: connect localhost " << port << std::endl;
+    std::cout << "      - Type: start" << std::endl;
+    std::cout << "   4. Speak into one - hear on the other!" << std::endl;
+    std::cout << "\nPress Enter to stop server..." << std::endl;
+
+    // Wait for Enter key
+    std::string input;
+    std::getline(std::cin, input);
+
+    server.stop();
+    return 0;
+}

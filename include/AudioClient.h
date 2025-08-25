@@ -1,91 +1,40 @@
 #pragma once
 
-#include "NetworkManager.h"
-#include "AudioProcessor.h"
-#include "SessionLogger.h"
-#include "AudioRecorder.h"
-#include "JitterBuffer.h"
+#include "CaptureSource.h"
+#include "CaptureSink.h"
+#include "RenderSource.h"
+#include "RenderSink.h"
+#include <iostream>
+#include <iomanip>
 #include <thread>
 #include <atomic>
-#include <vector>
 #include <string>
-#include <chrono>
 
 class AudioClient {
-public:
-    AudioClient(int inputDeviceId = -1,
-                int outputDeviceId = -1,
-                int sampleRate = 44100,
-                int channels = 2,
-                int framesPerBuffer = 256,
-                SessionLogger* logger = nullptr,
-                AudioRecorder* recorder = nullptr,
-                JitterBuffer* jitterBuffer = nullptr);
-    
-    ~AudioClient();
-    
-    bool connect(const std::string& server_host, int server_port);
-    void disconnect();
-    bool startAudio();
-    void stopAudio();
-    bool isConnected() const;
-    bool isAudioActive() const;
-    void run();
-    
-    static std::vector<std::string> getInputDeviceNames();
-    static std::vector<std::string> getOutputDeviceNames();
-
 private:
-    // Audio settings
-    int inputDeviceId_;
-    int outputDeviceId_;
-    int sampleRate_;
-    int channels_;
-    int framesPerBuffer_;
+    // ===== PROPER 4-MODULE ARCHITECTURE =====
+    CaptureSource captureSource_;    // Module 1: Microphone capture (PortAudio)
+    CaptureSink captureSink_;        // Module 2: Network transmission (IP packets)
+    RenderSource renderSource_;     // Module 3: Network reception & jitter buffer
+    RenderSink renderSink_;         // Module 4: Speaker playback (PortAudio)
     
-    // Components
-    NetworkManager network_manager_;
-    AudioProcessor audio_processor_;
-    SessionLogger* logger_;
-    AudioRecorder* recorder_;
-    JitterBuffer* jitterBuffer_;
-    
-    // Sequence tracking
-    uint32_t outgoingSequenceNumber_;
-    uint32_t incomingSequenceNumber_;
-    bool jitterBufferReady_;
-    
-    // State management
+    // Application state
     std::atomic<bool> connected_;
     std::atomic<bool> audio_active_;
+    std::thread processing_thread_;
     std::atomic<bool> running_;
-    std::atomic<bool> jitterBufferRunning_;
-    
-    // Threading
-    std::thread network_thread_;
-    std::thread jitterBufferThread_;
-    
-    std::chrono::steady_clock::time_point lastPacketTime_;
 
-    // Audio filter state (thread-safe per instance)
-    struct FilterState {  // ✅ ADDED: Proper filter state management
-        float hp_last = 0.0f;
-        float lp_last = 0.0f;
-        float de_esser_last = 0.0f;
-    } filterState_;
+public:
+    AudioClient() : connected_(false), audio_active_(false), running_(false) {}
+    ~AudioClient() { disconnect(); }
 
-
-    // Private methods
-    void handleNetworkMessage(const Message& message, int socket_fd);
-    void onAudioCaptured(const float* data, size_t samples);
-    void networkLoop();
-    void jitterBufferLoop();
-    void processJitterBuffer();
+    bool connect(const std::string& server_host, int server_port);
+    bool startAudio();
+    void stopAudio();
+    void disconnect();
+    void showComprehensiveStats();
     
-    // Audio filter method declarations
-    void applyVoiceFilters(float* data, size_t samples);
-    void applyNoiseGate(float* data, size_t samples);
-    void applyVoiceEQ(float* data, size_t samples);
-    void applyCompressor(float* data, size_t samples);
-    void applyDeEsser(float* data, size_t samples);
+    // Volume control
+    void setVolume(float volume);
+    void setMuted(bool muted);
 };

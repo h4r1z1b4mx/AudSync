@@ -1,0 +1,7 @@
+D:\AudSync-cross\test_client.cpp;D:\AudSync-cross\build\test_client.dir\Release\test_client.obj
+D:\AudSync-cross\src\Message.cpp;D:\AudSync-cross\build\test_client.dir\Release\Message.obj
+D:\AudSync-cross\src\CaptureSource.cpp;D:\AudSync-cross\build\test_client.dir\Release\CaptureSource.obj
+D:\AudSync-cross\src\CaptureSink.cpp;D:\AudSync-cross\build\test_client.dir\Release\CaptureSink.obj
+D:\AudSync-cross\src\RenderSource.cpp;D:\AudSync-cross\build\test_client.dir\Release\RenderSource.obj
+D:\AudSync-cross\src\RenderSink.cpp;D:\AudSync-cross\build\test_client.dir\Release\RenderSink.obj
+D:\AudSync-cross\src\AudioClient.cpp;D:\AudSync-cross\build\test_client.dir\Release\AudioClient.obj
