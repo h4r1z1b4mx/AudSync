@@ -178,6 +178,10 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
       <Project>{589300C4-B7A8-3A7D-A437-4474E69ED911}</Project>
       <Name>audsync_client</Name>
     </ProjectReference>
+    <ProjectReference Include="D:\AudSync-cross\build\audsync_modular.vcxproj">
+      <Project>{E5534991-C6F2-372C-BFFF-7687580BDA91}</Project>
+      <Name>audsync_modular</Name>
+    </ProjectReference>
     <ProjectReference Include="D:\AudSync-cross\build\audsync_server.vcxproj">
       <Project>{9C4DB445-05BC-3459-9286-824AD427624D}</Project>
       <Name>audsync_server</Name>

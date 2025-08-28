@@ -3,7 +3,7 @@ project(AudSync)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-              
+
 # Include platform-specific configurations
 if(WIN32)
     include(cmake/WindowsConfig.cmake OPTIONAL)
@@ -17,9 +17,19 @@ find_package(Threads REQUIRED)
 # Include directories
 include_directories(include)
 
-# Source files - Proper 4-module architecture
+
+# Source files
 set(COMMON_SOURCES
-    src/Message.cpp
+    src/AudioBuffer.cpp
+    src/AudioNetworkPacket.cpp
+    src/NetworkManager.cpp
+    src/SessionLogger.cpp
+    src/AudioRecorder.cpp
+    src/JitterBuffer.cpp
+)
+
+# Modular audio sources
+set(MODULAR_SOURCES
     src/CaptureSource.cpp
     src/CaptureSink.cpp
     src/RenderSource.cpp
@@ -28,14 +38,21 @@ set(COMMON_SOURCES
 
 set(CLIENT_SOURCES
     src/AudioClient.cpp
-    src/main_simple.cpp
+    src/AudioProcessor.cpp
+    src/main_client.cpp
     ${COMMON_SOURCES}
 )
 
-# Server sources - dedicated AudioServer
+set(MODULAR_CLIENT_SOURCES
+    src/main_modular_client.cpp
+    ${MODULAR_SOURCES}
+    ${COMMON_SOURCES}
+)
+
 set(SERVER_SOURCES
     src/AudioServer.cpp
-    src/Message.cpp
+    src/main_server.cpp
+    ${COMMON_SOURCES}
 )
 
 # Platform-specific network libraries
@@ -75,10 +92,17 @@ include_directories(${PORTAUDIO_INCLUDE_DIR})
 
 # Create executables
 add_executable(audsync_client ${CLIENT_SOURCES})
+add_executable(audsync_modular ${MODULAR_CLIENT_SOURCES})
 add_executable(audsync_server ${SERVER_SOURCES})
 
 # Link libraries
 target_link_libraries(audsync_client 
+    ${PORTAUDIO_LIBRARY}
+    ${NETWORK_LIBRARIES}
+    Threads::Threads
+)
+
+target_link_libraries(audsync_modular 
     ${PORTAUDIO_LIBRARY}
     ${NETWORK_LIBRARIES}
     Threads::Threads
@@ -92,18 +116,20 @@ target_link_libraries(audsync_server
 # Add macOS frameworks if available
 if(APPLE AND MACOS_AUDIO_FRAMEWORKS)
     target_link_libraries(audsync_client ${MACOS_AUDIO_FRAMEWORKS})
-    # Server doesn't need audio frameworks
 endif()
 
 # Cross-platform compiler flags
 if(MSVC)
     target_compile_options(audsync_client PRIVATE /W4)
+    target_compile_options(audsync_modular PRIVATE /W4)
     target_compile_options(audsync_server PRIVATE /W4)
     # Define WIN32_LEAN_AND_MEAN to reduce Windows header overhead
     target_compile_definitions(audsync_client PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+    target_compile_definitions(audsync_modular PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
     target_compile_definitions(audsync_server PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
 else()
     target_compile_options(audsync_client PRIVATE -Wall -Wextra)
+    target_compile_options(audsync_modular PRIVATE -Wall -Wextra)
     target_compile_options(audsync_server PRIVATE -Wall -Wextra)
 endif()
 
@@ -111,5 +137,6 @@ endif()
 if(WIN32)
     # Ensure we're linking against the correct Windows socket library
     target_link_libraries(audsync_client ws2_32)
+    target_link_libraries(audsync_modular ws2_32)
     target_link_libraries(audsync_server ws2_32)
 endif()

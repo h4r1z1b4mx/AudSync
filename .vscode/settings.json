@@ -75,5 +75,6 @@
         "xtree": "cpp",
         "xutility": "cpp",
         "filesystem": "cpp"
-    }
+    },
+    "github.copilot.chat.editor.temporalContext.enabled": true
 }

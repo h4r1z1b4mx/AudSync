@@ -4,22 +4,28 @@
     <ClCompile Include="D:\AudSync-cross\src\AudioClient.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="D:\AudSync-cross\src\main_simple.cpp">
+    <ClCompile Include="D:\AudSync-cross\src\AudioProcessor.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="D:\AudSync-cross\src\Message.cpp">
+    <ClCompile Include="D:\AudSync-cross\src\main_client.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="D:\AudSync-cross\src\CaptureSource.cpp">
+    <ClCompile Include="D:\AudSync-cross\src\AudioBuffer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="D:\AudSync-cross\src\CaptureSink.cpp">
+    <ClCompile Include="D:\AudSync-cross\src\AudioNetworkPacket.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="D:\AudSync-cross\src\RenderSource.cpp">
+    <ClCompile Include="D:\AudSync-cross\src\NetworkManager.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="D:\AudSync-cross\src\RenderSink.cpp">
+    <ClCompile Include="D:\AudSync-cross\src\SessionLogger.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\AudSync-cross\src\AudioRecorder.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\AudSync-cross\src\JitterBuffer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

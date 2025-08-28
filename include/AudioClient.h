@@ -1,40 +1,68 @@
 #pragma once
 
-#include "CaptureSource.h"
-#include "CaptureSink.h"
-#include "RenderSource.h"
-#include "RenderSink.h"
-#include <iostream>
-#include <iomanip>
-#include <thread>
-#include <atomic>
+#include "NetworkManager.h"
+#include "AudioProcessor.h"
+#include "SessionLogger.h"
+#include "AudioRecorder.h"
+#include "JitterBuffer.h"
 #include <string>
+#include <atomic>
+#include <thread>
+#include <vector>
 
 class AudioClient {
-private:
-    // ===== PROPER 4-MODULE ARCHITECTURE =====
-    CaptureSource captureSource_;    // Module 1: Microphone capture (PortAudio)
-    CaptureSink captureSink_;        // Module 2: Network transmission (IP packets)
-    RenderSource renderSource_;     // Module 3: Network reception & jitter buffer
-    RenderSink renderSink_;         // Module 4: Speaker playback (PortAudio)
-    
-    // Application state
-    std::atomic<bool> connected_;
-    std::atomic<bool> audio_active_;
-    std::thread processing_thread_;
-    std::atomic<bool> running_;
-
-public:
-    AudioClient() : connected_(false), audio_active_(false), running_(false) {}
-    ~AudioClient() { disconnect(); }
+  public:
+    AudioClient(int inputDeviceId,
+                int outputDeviceId,
+                int sampleRate,
+                int channels,
+                int framesPerBuffer,
+                SessionLogger* logger,
+                AudioRecorder* recorder,
+                JitterBuffer* jitterBuffer);
+    ~AudioClient();
 
     bool connect(const std::string& server_host, int server_port);
+    void disconnect();
+
     bool startAudio();
     void stopAudio();
-    void disconnect();
-    void showComprehensiveStats();
+
+    bool isConnected() const;
+    bool isAudioActive() const;
+    void run();
+
+    // Static utilities for device listing and unique filenames
+    static std::vector<std::string> getInputDeviceNames();
+    static std::vector<std::string> getOutputDeviceNames();
+    static std::string generateUniqueFilename(const std::string& prefix, const std::string& ext);
+
+  private:
+    NetworkManager network_manager_;
+    AudioProcessor audio_processor_;
+
+    SessionLogger* logger_;
+    AudioRecorder* recorder_;
+    JitterBuffer* jitterBuffer_;
+
+    int inputDeviceId_;
+    int outputDeviceId_;
+    int sampleRate_;
+    int channels_;
+    int framesPerBuffer_;
+
+    std::atomic<bool> connected_;
+    std::atomic<bool> audio_active_;
+    std::atomic<bool> running_;
+
+    std::thread jitterBufferThread_;
+    void jitterBufferLoop();
+    void processJitterBuffer();
+    std::atomic<bool> jitterBufferRunning_{false}; 
     
-    // Volume control
-    void setVolume(float volume);
-    void setMuted(bool muted);
+    std::thread network_thread_;
+    
+    void handleNetworkMessage(const Message& message, int socket_fd);
+    void onAudioCaptured(const float* data, size_t samples);
+    void networkLoop();
 };

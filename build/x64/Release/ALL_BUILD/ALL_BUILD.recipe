@@ -8,6 +8,9 @@
       <FullPath>D:\AudSync-cross\build\RELEASE\audsync_client.exe</FullPath>
     </ProjectOutput>
     <ProjectOutput>
+      <FullPath>D:\AudSync-cross\build\RELEASE\audsync_modular.exe</FullPath>
+    </ProjectOutput>
+    <ProjectOutput>
       <FullPath>D:\AudSync-cross\build\RELEASE\audsync_server.exe</FullPath>
     </ProjectOutput>
     <ProjectOutput>
