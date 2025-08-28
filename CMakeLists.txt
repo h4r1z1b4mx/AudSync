@@ -26,6 +26,7 @@ set(COMMON_SOURCES
     src/SessionLogger.cpp
     src/AudioRecorder.cpp
     src/JitterBuffer.cpp
+    src/AudioConfig.cpp
 )
 
 # Modular audio sources

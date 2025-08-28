@@ -418,6 +418,7 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
     <ClCompile Include="D:\AudSync-cross\src\SessionLogger.cpp" />
     <ClCompile Include="D:\AudSync-cross\src\AudioRecorder.cpp" />
     <ClCompile Include="D:\AudSync-cross\src\JitterBuffer.cpp" />
+    <ClCompile Include="D:\AudSync-cross\src\AudioConfig.cpp" />
   </ItemGroup>
   <ItemGroup />
   <ItemGroup>

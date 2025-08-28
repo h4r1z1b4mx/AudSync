@@ -28,6 +28,9 @@
     <ClCompile Include="D:\AudSync-cross\src\JitterBuffer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="D:\AudSync-cross\src\AudioConfig.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <CustomBuild Include="D:\AudSync-cross\CMakeLists.txt" />

@@ -9,3 +9,4 @@ D:\AudSync-cross\src\NetworkManager.cpp;D:\AudSync-cross\build\audsync_modular.d
 D:\AudSync-cross\src\SessionLogger.cpp;D:\AudSync-cross\build\audsync_modular.dir\Release\SessionLogger.obj
 D:\AudSync-cross\src\AudioRecorder.cpp;D:\AudSync-cross\build\audsync_modular.dir\Release\AudioRecorder.obj
 D:\AudSync-cross\src\JitterBuffer.cpp;D:\AudSync-cross\build\audsync_modular.dir\Release\JitterBuffer.obj
+D:\AudSync-cross\src\AudioConfig.cpp;D:\AudSync-cross\build\audsync_modular.dir\Release\AudioConfig.obj

@@ -4,12 +4,14 @@
 #include "RenderSink.h"
 #include "NetworkManager.h"
 #include "AudioNetworkPacket.h"
+#include "AudioConfig.h"
 #include <iostream>
 #include <string>
 #include <thread>
 #include <chrono>
 #include <atomic>
 #include <signal.h>
+#include <iomanip>
 
 #ifdef _WIN32
 #include <conio.h>
@@ -19,11 +21,6 @@
 #include <unistd.h>
 #include <fcntl.h>
 #endif
-
-// Constants
-const int SAMPLE_RATE = 48000;
-const int CHANNELS = 2;
-const int FRAMES_PER_BUFFER = 512;
 
 // Global flag for graceful shutdown
 std::atomic<bool> g_running(true);
@@ -42,6 +39,38 @@ public:
         std::cout << "=== Modular Audio Client ===" << std::endl;
         std::cout << "Initializing 4-module audio architecture..." << std::endl;
 
+        // Configure audio parameters
+        std::cout << "\n🎛️ Audio Configuration:" << std::endl;
+        std::cout << "1. Use default settings (48kHz, 2ch, 512 frames)" << std::endl;
+        std::cout << "2. Configure audio parameters interactively" << std::endl;
+        std::cout << "Choose option [1-2]: ";
+        
+        int configChoice;
+        std::cin >> configChoice;
+        
+        if (configChoice == 2) {
+            audioParams_ = AudioConfig::configureInteractively();
+        } else {
+            // Use default parameters but validate them
+            audioParams_.sampleRate = 48000;
+            audioParams_.channels = 2;
+            audioParams_.framesPerBuffer = 512;
+            audioParams_.inputDeviceId = -1;  // Default device
+            audioParams_.outputDeviceId = -1; // Default device
+            
+            // Calculate derived parameters
+            auto bufferInfo = AudioConfig::getOptimalBufferSize(audioParams_.sampleRate, audioParams_.channels, true);
+            audioParams_.expectedLatencyMs = (double)audioParams_.framesPerBuffer / audioParams_.sampleRate * 1000.0;
+            audioParams_.packetSizeBytes = AudioConfig::calculateOptimalPacketSize(audioParams_.sampleRate, audioParams_.channels, audioParams_.framesPerBuffer);
+            
+            std::cout << "\n✅ Using Default Configuration:" << std::endl;
+            std::cout << "   Sample Rate: " << audioParams_.sampleRate << "Hz" << std::endl;
+            std::cout << "   Channels: " << audioParams_.channels << std::endl;
+            std::cout << "   Buffer Size: " << audioParams_.framesPerBuffer << " frames" << std::endl;
+            std::cout << "   Expected Latency: " << std::fixed << std::setprecision(1) << audioParams_.expectedLatencyMs << "ms" << std::endl;
+            std::cout << "   Packet Size: " << audioParams_.packetSizeBytes << " bytes" << std::endl;
+        }
+
         // First, create shared network connection
         std::cout << "\n[Network] Connecting to server..." << std::endl;
         if (!sharedNetworkManager_.connectToServer(serverHost_, serverPort_)) {
@@ -59,7 +88,7 @@ public:
 
         // Module 1: CaptureSource (Microphone capture)
         std::cout << "\n[1/4] Initializing CaptureSource..." << std::endl;
-        if (!captureSource_.CaptureSourceInit(-1, SAMPLE_RATE, CHANNELS, FRAMES_PER_BUFFER)) {
+        if (!captureSource_.CaptureSourceInit(audioParams_.inputDeviceId, audioParams_.sampleRate, audioParams_.channels, audioParams_.framesPerBuffer)) {
             std::cerr << "Failed to initialize CaptureSource" << std::endl;
             return false;
         }
@@ -80,7 +109,7 @@ public:
         
         // Module 4: RenderSink (Speaker playback)
         std::cout << "\n[4/4] Initializing RenderSink..." << std::endl;
-        if (!renderSink_.RenderSinkInit(-1, SAMPLE_RATE, CHANNELS, FRAMES_PER_BUFFER)) {
+        if (!renderSink_.RenderSinkInit(audioParams_.outputDeviceId, audioParams_.sampleRate, audioParams_.channels, audioParams_.framesPerBuffer)) {
             std::cerr << "Failed to initialize RenderSink" << std::endl;
             return false;
         }
@@ -175,9 +204,9 @@ private:
         
         // Pack audio config (sample rate, channels, buffer size)
         int32_t* configData = reinterpret_cast<int32_t*>(configMsg.data.data());
-        configData[0] = SAMPLE_RATE;     // 48000
-        configData[1] = CHANNELS;        // 2
-        configData[2] = FRAMES_PER_BUFFER; // 512
+        configData[0] = audioParams_.sampleRate;
+        configData[1] = audioParams_.channels;
+        configData[2] = audioParams_.framesPerBuffer;
         
         if (!sharedNetworkManager_.sendMessage(configMsg)) {
             std::cerr << "Failed to send client config" << std::endl;
@@ -271,6 +300,7 @@ private:
     std::string serverHost_;
     int serverPort_;
     
+    AudioConfig::AudioParameters audioParams_;
     NetworkManager sharedNetworkManager_;
     
     CaptureSource captureSource_;
