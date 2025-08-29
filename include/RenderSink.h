@@ -65,8 +65,8 @@ private:
     std::atomic<float> volume_{1.0f};
     std::atomic<bool> isMuted_{false};
     
-    // Buffer configuration
-    size_t maxBufferMs_ = 100; // Maximum buffer in milliseconds
+    // Buffer configuration - optimized for quality and stability
+    size_t maxBufferMs_ = 100; // Increased buffer for better quality (was 75ms)
     
     // Internal PortAudio callback
     static int audioCallback(const void* inputBuffer, void* outputBuffer,

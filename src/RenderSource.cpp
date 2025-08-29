@@ -4,6 +4,8 @@
 #include <chrono>
 #include <algorithm>
 #include <cstring>
+#include <queue>
+#include <mutex>
 
 bool RenderSource::RenderSourceInit(const std::string& serverHost, int serverPort) {
     if (isInitialized_) {
@@ -27,7 +29,7 @@ bool RenderSource::RenderSourceInit(const std::string& serverHost, int serverPor
     
     isInitialized_ = true;
     std::cout << "RenderSource: Initialized successfully" << std::endl;
-    std::cout << "  Expected Sample Rate: 48000Hz" << std::endl;
+    std::cout << "  Expected Sample Rate: Auto-detect from client" << std::endl;
     std::cout << "  Expected Channels: 2" << std::endl;
     std::cout << "  Buffer Size: " << minBufferMs_ << "-" << maxBufferMs_ << "ms (target: " << targetBufferMs_ << "ms)" << std::endl;
     std::cout << "  Packet Interval: " << packetIntervalMs_ << "ms" << std::endl;
@@ -64,7 +66,7 @@ bool RenderSource::RenderSourceInitWithSharedNetwork(NetworkManager* sharedNetwo
     isReceiving_.store(true); // Using shared connection
     
     std::cout << "RenderSource: Initialized with shared network successfully" << std::endl;
-    std::cout << "  Expected Sample Rate: 48000Hz" << std::endl;
+    std::cout << "  Expected Sample Rate: Auto-detect from client" << std::endl;
     std::cout << "  Expected Channels: 2" << std::endl;
     std::cout << "  Buffer Size: " << minBufferMs_ << "-" << maxBufferMs_ << "ms (target: " << targetBufferMs_ << "ms)" << std::endl;
     std::cout << "  Packet Interval: " << packetIntervalMs_ << "ms" << std::endl;
@@ -127,11 +129,11 @@ bool RenderSource::startReceiving(const std::string& host, int port) {
         std::chrono::high_resolution_clock::now().time_since_epoch()
     ).count();
     
-    // Pack audio config (sample rate, channels, buffer size)
+    // Pack audio config (use actual configured parameters instead of hardcoded)
     int32_t* configData = reinterpret_cast<int32_t*>(configMsg.data.data());
-    configData[0] = 48000; // Sample rate
-    configData[1] = 2;     // Channels
-    configData[2] = 512;   // Buffer size
+    configData[0] = audioSampleRate_; // Use configured sample rate
+    configData[1] = audioChannels_;   // Use configured channels  
+    configData[2] = audioFramesPerBuffer_; // Use configured buffer size
     
     if (!networkManager_.sendMessage(configMsg)) {
         std::cerr << "RenderSource: Failed to send client config" << std::endl;
@@ -195,6 +197,21 @@ void RenderSource::setRenderCallback(std::function<void(const float*, size_t, ui
     renderCallback_ = callback;
 }
 
+void RenderSource::setAudioParameters(int sampleRate, int channels, int framesPerBuffer) {
+    audioSampleRate_ = sampleRate;
+    audioChannels_ = channels;
+    audioFramesPerBuffer_ = framesPerBuffer;
+    
+    // Update packet interval based on new parameters
+    packetIntervalMs_ = (double)framesPerBuffer / sampleRate * 1000.0;
+    
+    std::cout << "RenderSource: Audio parameters updated:" << std::endl;
+    std::cout << "  Sample Rate: " << sampleRate << "Hz" << std::endl;
+    std::cout << "  Channels: " << channels << std::endl;
+    std::cout << "  Frames Per Buffer: " << framesPerBuffer << std::endl;
+    std::cout << "  Packet Interval: " << packetIntervalMs_ << "ms" << std::endl;
+}
+
 void RenderSource::setBufferSize(double minBufferMs, double maxBufferMs, double targetBufferMs) {
     minBufferMs_ = minBufferMs;
     maxBufferMs_ = maxBufferMs;
@@ -250,9 +267,22 @@ void RenderSource::receptionWorker() {
                     std::memcpy(audioPacket.audioData.data(), message.data.data(), message.size);
                     
                     if (usingSharedNetwork_) {
-                        // For shared network, call render callback directly (bypass jitter buffer complexity)
-                        if (renderCallback_) {
-                            renderCallback_(audioPacket.audioData.data(), audioPacket.audioData.size(), audioPacket.timestamp);
+                        // For shared network, use lightweight buffering instead of bypassing completely
+                        // This prevents audio timing issues while keeping low latency
+                        static std::queue<ReceivedAudioPacket> lightweightBuffer;
+                        static std::mutex lightweightMutex;
+                        static int bufferTargetSize = 3; // Keep 3 packets buffered for smooth playback
+                        
+                        {
+                            std::lock_guard<std::mutex> lock(lightweightMutex);
+                            lightweightBuffer.push(audioPacket);
+                            
+                            // Process buffered packets if we have enough
+                            while (lightweightBuffer.size() >= bufferTargetSize && renderCallback_) {
+                                auto packet = lightweightBuffer.front();
+                                lightweightBuffer.pop();
+                                renderCallback_(packet.audioData.data(), packet.audioData.size(), packet.timestamp);
+                            }
                         }
                     } else {
                         // Use jitter buffer for standalone network connections
@@ -262,11 +292,11 @@ void RenderSource::receptionWorker() {
                     totalPacketsReceived_.fetch_add(1);
                     totalBytesReceived_.fetch_add(message.size);
                     
-                    // Debug: Show reception activity occasionally
+                    // Debug: Show reception activity occasionally (silenced for cleaner output)
                     static int receivedPacketCount = 0;
                     receivedPacketCount++;
-                    if (receivedPacketCount % 100 == 0) {  // Every 100 packets
-                        std::cout << "📥 Received " << receivedPacketCount << " packets, " << audioPacket.audioData.size() << " samples" << std::endl;
+                    if (receivedPacketCount % 1000 == 0) {  // Every 1000 packets (reduced frequency)
+                        // std::cout << "Received " << receivedPacketCount << " packets, " << audioPacket.audioData.size() << " samples" << std::endl;
                     }
                 }
             } else {

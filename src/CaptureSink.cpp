@@ -262,12 +262,12 @@ bool CaptureSink::sendAudioData(const float *audioData, size_t samples, uint64_t
         totalPacketsSent_.fetch_add(1);
         totalBytesTransmitted_.fetch_add(audioMessage.size);
 
-        // Debug: Show transmission activity occasionally
+        // Debug: Show transmission activity occasionally (silenced for cleaner output)
         static int packetCount = 0;
         packetCount++;
-        if (packetCount % 100 == 0)
-        { // Every 100 packets
-            std::cout << "📤 Sent " << packetCount << " packets, " << samples << " samples" << std::endl;
+        if (packetCount % 1000 == 0)
+        { // Every 1000 packets (reduced frequency)
+            // std::cout << "Sent " << packetCount << " packets, " << samples << " samples" << std::endl;
         }
 
         return true;

@@ -7,9 +7,6 @@
     <ClCompile Include="D:\AudSync-cross\src\main_server.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="D:\AudSync-cross\src\AudioBuffer.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="D:\AudSync-cross\src\AudioNetworkPacket.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -23,9 +20,6 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="D:\AudSync-cross\src\JitterBuffer.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="D:\AudSync-cross\src\AudioConfig.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

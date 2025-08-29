@@ -20,12 +20,15 @@ include_directories(include)
 
 # Source files
 set(COMMON_SOURCES
-    src/AudioBuffer.cpp
     src/AudioNetworkPacket.cpp
     src/NetworkManager.cpp
     src/SessionLogger.cpp
     src/AudioRecorder.cpp
     src/JitterBuffer.cpp
+)
+
+# Client-only sources (require PortAudio)
+set(CLIENT_ONLY_SOURCES
     src/AudioConfig.cpp
 )
 
@@ -38,8 +41,6 @@ set(MODULAR_SOURCES
 )
 
 set(CLIENT_SOURCES
-    src/AudioClient.cpp
-    src/AudioProcessor.cpp
     src/main_client.cpp
     ${COMMON_SOURCES}
 )
@@ -48,6 +49,7 @@ set(MODULAR_CLIENT_SOURCES
     src/main_modular_client.cpp
     ${MODULAR_SOURCES}
     ${COMMON_SOURCES}
+    ${CLIENT_ONLY_SOURCES}
 )
 
 set(SERVER_SOURCES
@@ -92,16 +94,16 @@ endif()
 include_directories(${PORTAUDIO_INCLUDE_DIR})
 
 # Create executables
-add_executable(audsync_client ${CLIENT_SOURCES})
+# add_executable(audsync_client ${CLIENT_SOURCES})  # Legacy client disabled - missing dependencies
 add_executable(audsync_modular ${MODULAR_CLIENT_SOURCES})
 add_executable(audsync_server ${SERVER_SOURCES})
 
 # Link libraries
-target_link_libraries(audsync_client 
-    ${PORTAUDIO_LIBRARY}
-    ${NETWORK_LIBRARIES}
-    Threads::Threads
-)
+# target_link_libraries(audsync_client   # Legacy client disabled
+#     ${PORTAUDIO_LIBRARY}
+#     ${NETWORK_LIBRARIES}
+#     Threads::Threads
+# )
 
 target_link_libraries(audsync_modular 
     ${PORTAUDIO_LIBRARY}
@@ -115,21 +117,21 @@ target_link_libraries(audsync_server
 )
 
 # Add macOS frameworks if available
-if(APPLE AND MACOS_AUDIO_FRAMEWORKS)
-    target_link_libraries(audsync_client ${MACOS_AUDIO_FRAMEWORKS})
-endif()
+# if(APPLE AND MACOS_AUDIO_FRAMEWORKS)  # Legacy client disabled
+#     target_link_libraries(audsync_client ${MACOS_AUDIO_FRAMEWORKS})
+# endif()
 
 # Cross-platform compiler flags
 if(MSVC)
-    target_compile_options(audsync_client PRIVATE /W4)
+    # target_compile_options(audsync_client PRIVATE /W4)  # Legacy client disabled
     target_compile_options(audsync_modular PRIVATE /W4)
     target_compile_options(audsync_server PRIVATE /W4)
     # Define WIN32_LEAN_AND_MEAN to reduce Windows header overhead
-    target_compile_definitions(audsync_client PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+    # target_compile_definitions(audsync_client PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)  # Legacy client disabled
     target_compile_definitions(audsync_modular PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
     target_compile_definitions(audsync_server PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
 else()
-    target_compile_options(audsync_client PRIVATE -Wall -Wextra)
+    # target_compile_options(audsync_client PRIVATE -Wall -Wextra)  # Legacy client disabled
     target_compile_options(audsync_modular PRIVATE -Wall -Wextra)
     target_compile_options(audsync_server PRIVATE -Wall -Wextra)
 endif()
@@ -137,7 +139,7 @@ endif()
 # Windows-specific settings
 if(WIN32)
     # Ensure we're linking against the correct Windows socket library
-    target_link_libraries(audsync_client ws2_32)
+    # target_link_libraries(audsync_client ws2_32)  # Legacy client disabled
     target_link_libraries(audsync_modular ws2_32)
     target_link_libraries(audsync_server ws2_32)
 endif()

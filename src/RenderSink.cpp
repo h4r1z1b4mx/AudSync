@@ -165,11 +165,11 @@ bool RenderSink::queueAudioData(const float* audioData, size_t samples, uint64_t
     std::vector<float> audioBuffer(audioData, audioData + samples);
     audioQueue_.push(audioBuffer);
     
-    // Debug: Show when audio is queued for playback
+    // Debug: Show when audio is queued for playback (silenced for cleaner output)
     static int queuedPacketCount = 0;
     queuedPacketCount++;
-    if (queuedPacketCount % 100 == 0) {  // Every 100 packets
-        std::cout << "🔊 Queued " << queuedPacketCount << " packets for playback, " << samples << " samples" << std::endl;
+    if (queuedPacketCount % 1000 == 0) {  // Every 1000 packets (reduced frequency)
+        // std::cout << "Queued " << queuedPacketCount << " packets for playback, " << samples << " samples" << std::endl;
     }
     
     return true;
@@ -235,9 +235,13 @@ int RenderSink::audioCallback(const void* inputBuffer, void* outputBuffer,
         return paAbort;
     }
 
-    // Handle status flags
+    // Handle status flags (reduced verbosity)
     if (statusFlags & paOutputUnderflow) {
-        std::cerr << "RenderSink: Output underflow detected" << std::endl;
+        static int underflowCount = 0;
+        underflowCount++;
+        if (underflowCount % 100 == 0) {  // Only report every 100th underflow
+            std::cerr << "RenderSink: Audio underflows detected (" << underflowCount << " total)" << std::endl;
+        }
     }
 
     float* output = static_cast<float*>(outputBuffer);
@@ -257,11 +261,41 @@ bool RenderSink::fillOutputBuffer(float* outputBuffer, size_t samples) {
     
     size_t samplesWritten = 0;
     
+    // Check if we have enough buffered audio for smooth playback
+    size_t totalBufferedSamples = 0;
+    std::queue<std::vector<float>> tempQueue = audioQueue_;
+    while (!tempQueue.empty()) {
+        totalBufferedSamples += tempQueue.front().size();
+        tempQueue.pop();
+    }
+    
+    // Add current buffer samples
+    if (!currentBuffer_.empty() && currentBufferPos_ < currentBuffer_.size()) {
+        totalBufferedSamples += (currentBuffer_.size() - currentBufferPos_);
+    }
+    
+    // If buffer is getting low, show warning occasionally
+    double bufferTimeMs = (double)totalBufferedSamples / (sampleRate_ * channels_) * 1000.0;
+    static int lowBufferWarnings = 0;
+    if (bufferTimeMs < 20.0 && totalBufferedSamples > 0) {  // Less than 20ms buffered
+        lowBufferWarnings++;
+        if (lowBufferWarnings % 100 == 0) {  // Every 100th warning
+            std::cout << "Warning: Low audio buffer (" << bufferTimeMs << "ms) - may cause audio breaks" << std::endl;
+        }
+    }
+    
     while (samplesWritten < samples) {
         // If current buffer is empty or finished, get next one
         if (currentBuffer_.empty() || currentBufferPos_ >= currentBuffer_.size()) {
             if (audioQueue_.empty()) {
-                // No more audio data
+                // No more audio data - this causes audio breaks
+                if (samplesWritten == 0) {
+                    static int emptyBufferCount = 0;
+                    emptyBufferCount++;
+                    if (emptyBufferCount % 50 == 0) {  // Every 50th occurrence
+                        std::cout << "Audio buffer empty - silence generated (" << emptyBufferCount << " times)" << std::endl;
+                    }
+                }
                 break;
             }
             
@@ -296,6 +330,9 @@ void RenderSink::applyVolumeAndMuting(float* buffer, size_t samples) {
     if (volume != 1.0f) {
         for (size_t i = 0; i < samples; i++) {
             buffer[i] *= volume;
+            // Prevent clipping on output
+            if (buffer[i] > 1.0f) buffer[i] = 1.0f;
+            else if (buffer[i] < -1.0f) buffer[i] = -1.0f;
         }
     }
 }

@@ -1,4 +1,3 @@
-D:/AudSync-cross/build/CMakeFiles/audsync_client.dir
 D:/AudSync-cross/build/CMakeFiles/audsync_modular.dir
 D:/AudSync-cross/build/CMakeFiles/audsync_server.dir
 D:/AudSync-cross/build/CMakeFiles/ALL_BUILD.dir

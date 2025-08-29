@@ -16,9 +16,6 @@
     <ClCompile Include="D:\AudSync-cross\src\RenderSink.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="D:\AudSync-cross\src\AudioBuffer.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="D:\AudSync-cross\src\AudioNetworkPacket.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>

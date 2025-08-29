@@ -21,10 +21,30 @@ std::vector<AudioConfig::DeviceInfo> AudioConfig::getInputDevices() {
     for (int i = 0; i < numDevices; i++) {
         const PaDeviceInfo* info = Pa_GetDeviceInfo(i);
         if (info && info->maxInputChannels > 0) {
-            DeviceInfo device = getDeviceInfo(i);
-            device.isInput = true;
-            device.isOutput = false;
-            devices.push_back(device);
+            std::string deviceName = info->name;
+            std::string lowerName = deviceName;
+            std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(), ::tolower);
+            
+            // Only include devices that are clearly input devices
+            // Exclude devices that are primarily output devices
+            bool isOutputDevice = (lowerName.find("speaker") != std::string::npos ||
+                                 lowerName.find("headphone") != std::string::npos ||
+                                 lowerName.find("output") != std::string::npos);
+            
+            // Include if it's clearly an input device or has more input than output channels
+            bool isInputDevice = (lowerName.find("microphone") != std::string::npos ||
+                                lowerName.find("mic ") != std::string::npos ||
+                                lowerName.find("input") != std::string::npos ||
+                                lowerName.find("capture") != std::string::npos ||
+                                lowerName.find("array") != std::string::npos ||
+                                info->maxInputChannels > info->maxOutputChannels);
+            
+            if (isInputDevice && !isOutputDevice) {
+                DeviceInfo device = getDeviceInfo(i);
+                device.isInput = true;
+                device.isOutput = false;
+                devices.push_back(device);
+            }
         }
     }
     
@@ -45,10 +65,31 @@ std::vector<AudioConfig::DeviceInfo> AudioConfig::getOutputDevices() {
     for (int i = 0; i < numDevices; i++) {
         const PaDeviceInfo* info = Pa_GetDeviceInfo(i);
         if (info && info->maxOutputChannels > 0) {
-            DeviceInfo device = getDeviceInfo(i);
-            device.isInput = false;
-            device.isOutput = true;
-            devices.push_back(device);
+            std::string deviceName = info->name;
+            std::string lowerName = deviceName;
+            std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(), ::tolower);
+            
+            // Only include devices that are clearly output devices
+            // Exclude devices that are primarily input devices
+            bool isInputDevice = (lowerName.find("microphone") != std::string::npos ||
+                                lowerName.find("mic ") != std::string::npos ||
+                                lowerName.find("input") != std::string::npos ||
+                                lowerName.find("capture") != std::string::npos ||
+                                lowerName.find("array") != std::string::npos);
+            
+            // Include if it's clearly an output device or has more output than input channels
+            bool isOutputDevice = (lowerName.find("speaker") != std::string::npos ||
+                                 lowerName.find("headphone") != std::string::npos ||
+                                 lowerName.find("headset") != std::string::npos ||
+                                 lowerName.find("output") != std::string::npos ||
+                                 info->maxOutputChannels > info->maxInputChannels);
+            
+            if (isOutputDevice && !isInputDevice) {
+                DeviceInfo device = getDeviceInfo(i);
+                device.isInput = false;
+                device.isOutput = true;
+                devices.push_back(device);
+            }
         }
     }
     
@@ -204,21 +245,29 @@ int AudioConfig::calculateOptimalPacketSize(int sampleRate, int channels, int fr
 std::vector<int> AudioConfig::getRecommendedBufferSizes(int sampleRate) {
     std::vector<int> recommended;
     
-    for (int bufferSize : STANDARD_BUFFER_SIZES) {
+    // Standard buffer sizes that are commonly supported
+    std::vector<int> candidateBuffers = {64, 128, 256, 512, 1024, 2048};
+    
+    for (int bufferSize : candidateBuffers) {
         double latencyMs = (double)bufferSize / sampleRate * 1000.0;
         int packetSize = calculateOptimalPacketSize(sampleRate, 2, bufferSize); // Assume stereo
         
         // Include if latency is reasonable and packet fits in MTU
-        if (latencyMs >= 5.0 && latencyMs <= 100.0 && packetSize <= MAX_AUDIO_PAYLOAD) {
+        if (latencyMs >= 1.0 && latencyMs <= 100.0 && packetSize <= MAX_AUDIO_PAYLOAD) {
             recommended.push_back(bufferSize);
         }
+    }
+    
+    // Ensure we have at least some options even if they're not optimal
+    if (recommended.empty()) {
+        recommended = {128, 256, 512}; // Safe fallback options
     }
     
     return recommended;
 }
 
 void AudioConfig::displayDeviceCapabilities(const DeviceInfo& device) {
-    std::cout << "\n📱 Device: " << device.name << " (ID: " << device.deviceId << ")" << std::endl;
+    std::cout << "\nDevice: " << device.name << " (ID: " << device.deviceId << ")" << std::endl;
     std::cout << "   Type: " << (device.isInput ? "Input" : "Output") << std::endl;
     
     std::cout << "   Supported Sample Rates: ";
@@ -243,10 +292,10 @@ void AudioConfig::displayDeviceCapabilities(const DeviceInfo& device) {
 AudioConfig::AudioParameters AudioConfig::configureInteractively() {
     AudioParameters params;
     
-    std::cout << "\n🎵 === Audio Configuration Wizard ===" << std::endl;
+    std::cout << "\n=== Audio Configuration Wizard ===" << std::endl;
     
     // Get input devices
-    std::cout << "\n📥 Available Input Devices:" << std::endl;
+    std::cout << "\nAvailable Input Devices:" << std::endl;
     auto inputDevices = getInputDevices();
     for (size_t i = 0; i < inputDevices.size(); i++) {
         std::cout << "  [" << i << "] " << inputDevices[i].name;
@@ -263,7 +312,7 @@ AudioConfig::AudioParameters AudioConfig::configureInteractively() {
     params.inputDeviceId = inputDevices[inputChoice].deviceId;
     
     // Get output devices
-    std::cout << "\n📤 Available Output Devices:" << std::endl;
+    std::cout << "\nAvailable Output Devices:" << std::endl;
     auto outputDevices = getOutputDevices();
     for (size_t i = 0; i < outputDevices.size(); i++) {
         std::cout << "  [" << i << "] " << outputDevices[i].name;
@@ -284,7 +333,7 @@ AudioConfig::AudioParameters AudioConfig::configureInteractively() {
     displayDeviceCapabilities(outputDevices[outputChoice]);
     
     // Sample Rate Selection
-    std::cout << "\n🎵 Sample Rate Selection:" << std::endl;
+    std::cout << "\nSample Rate Selection:" << std::endl;
     auto commonRates = inputDevices[inputChoice].supportedSampleRates;
     
     // Filter to rates supported by both devices
@@ -311,7 +360,7 @@ AudioConfig::AudioParameters AudioConfig::configureInteractively() {
     params.sampleRate = mutualRates[rateChoice];
     
     // Channel Selection
-    std::cout << "\n🔊 Channel Configuration:" << std::endl;
+    std::cout << "\nChannel Configuration:" << std::endl;
     int maxChannels = std::min(
         *std::max_element(inputDevices[inputChoice].supportedChannels.begin(),
                          inputDevices[inputChoice].supportedChannels.end()),
@@ -333,18 +382,35 @@ AudioConfig::AudioParameters AudioConfig::configureInteractively() {
     if (params.channels < 1 || params.channels > maxChannels) params.channels = 2;
     
     // Buffer Size Selection
-    std::cout << "\n⚡ Buffer Size Configuration:" << std::endl;
+    std::cout << "\nBuffer Size Configuration (frames):" << std::endl;
     auto recommendedBuffers = getRecommendedBufferSizes(params.sampleRate);
     
     for (size_t i = 0; i < recommendedBuffers.size(); i++) {
-        OptimalBufferInfo bufferInfo = getOptimalBufferSize(params.sampleRate, params.channels, true);
-        bufferInfo.framesPerBuffer = recommendedBuffers[i];
-        bufferInfo.latencyMs = (double)recommendedBuffers[i] / params.sampleRate * 1000.0;
-        bufferInfo.packetSizeBytes = calculateOptimalPacketSize(params.sampleRate, params.channels, recommendedBuffers[i]);
+        int bufferFrames = recommendedBuffers[i];
+        double latencyMs = (double)bufferFrames / params.sampleRate * 1000.0;
+        int packetSizeBytes = calculateOptimalPacketSize(params.sampleRate, params.channels, bufferFrames);
         
-        std::cout << "  [" << i << "] " << recommendedBuffers[i] << " frames (" 
-                  << std::fixed << std::setprecision(1) << bufferInfo.latencyMs << "ms, "
-                  << bufferInfo.packetSizeBytes << " bytes)" << std::endl;
+        std::cout << "  [" << i << "] " << bufferFrames << " frames (" 
+                  << std::fixed << std::setprecision(1) << latencyMs << "ms, "
+                  << packetSizeBytes << " bytes)";
+        
+        // Show MTU compliance
+        if (packetSizeBytes <= MAX_AUDIO_PAYLOAD) {
+            std::cout << " - MTU OK";
+        } else {
+            std::cout << " - MTU EXCEEDED";
+        }
+        
+        // Show quality recommendations
+        if (latencyMs <= 5.0) {
+            std::cout << " [Low Latency]";
+        } else if (latencyMs <= 15.0) {
+            std::cout << " [Balanced]";
+        } else {
+            std::cout << " [High Quality]";
+        }
+        
+        std::cout << std::endl;
     }
     
     std::cout << "\nSelect buffer size [0-" << (recommendedBuffers.size()-1) << "]: ";
@@ -354,16 +420,11 @@ AudioConfig::AudioParameters AudioConfig::configureInteractively() {
     params.framesPerBuffer = recommendedBuffers[bufferChoice];
     
     // Calculate final parameters
-    OptimalBufferInfo finalInfo = getOptimalBufferSize(params.sampleRate, params.channels, true);
-    finalInfo.framesPerBuffer = params.framesPerBuffer;
-    finalInfo.latencyMs = (double)params.framesPerBuffer / params.sampleRate * 1000.0;
-    finalInfo.packetSizeBytes = calculateOptimalPacketSize(params.sampleRate, params.channels, params.framesPerBuffer);
-    
-    params.expectedLatencyMs = finalInfo.latencyMs;
-    params.packetSizeBytes = finalInfo.packetSizeBytes;
+    params.expectedLatencyMs = (double)params.framesPerBuffer / params.sampleRate * 1000.0;
+    params.packetSizeBytes = calculateOptimalPacketSize(params.sampleRate, params.channels, params.framesPerBuffer);
     
     // Display final configuration
-    std::cout << "\n✅ Final Audio Configuration:" << std::endl;
+    std::cout << "\nFinal Audio Configuration:" << std::endl;
     std::cout << "   Input Device: " << inputDevices[inputChoice].name << std::endl;
     std::cout << "   Output Device: " << outputDevices[outputChoice].name << std::endl;
     std::cout << "   Sample Rate: " << params.sampleRate << "Hz" << std::endl;
@@ -373,7 +434,17 @@ AudioConfig::AudioParameters AudioConfig::configureInteractively() {
     std::cout << "   Packet Size: " << params.packetSizeBytes << " bytes" << std::endl;
     std::cout << "   MTU Efficiency: " << std::fixed << std::setprecision(1) 
               << (double)params.packetSizeBytes / MAX_AUDIO_PAYLOAD * 100.0 << "%" << std::endl;
-    std::cout << "   Recommendation: " << finalInfo.recommendation << std::endl;
+    
+    // Show recommendation
+    if (params.packetSizeBytes > MAX_AUDIO_PAYLOAD) {
+        std::cout << "   Warning: Packet size exceeds MTU, may cause network fragmentation" << std::endl;
+    } else if (params.expectedLatencyMs < 3.0) {
+        std::cout << "   Note: Very low latency - may cause audio dropouts on slower systems" << std::endl;
+    } else if (params.expectedLatencyMs > 30.0) {
+        std::cout << "   Note: High latency - good for stability, less responsive" << std::endl;
+    } else {
+        std::cout << "   Status: Optimal configuration for real-time audio" << std::endl;
+    }
     
     return params;
 }

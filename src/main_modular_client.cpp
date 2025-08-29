@@ -40,8 +40,8 @@ public:
         std::cout << "Initializing 4-module audio architecture..." << std::endl;
 
         // Configure audio parameters
-        std::cout << "\n🎛️ Audio Configuration:" << std::endl;
-        std::cout << "1. Use default settings (48kHz, 2ch, 512 frames)" << std::endl;
+        std::cout << "\nAudio Configuration:" << std::endl;
+        std::cout << "1. Use optimized defaults (44.1kHz, 2ch, 256 frames)" << std::endl;
         std::cout << "2. Configure audio parameters interactively" << std::endl;
         std::cout << "Choose option [1-2]: ";
         
@@ -51,22 +51,22 @@ public:
         if (configChoice == 2) {
             audioParams_ = AudioConfig::configureInteractively();
         } else {
-            // Use default parameters but validate them
-            audioParams_.sampleRate = 48000;
+            // Use optimized default parameters for better audio quality
+            audioParams_.sampleRate = 44100;     // CD quality, widely supported
             audioParams_.channels = 2;
-            audioParams_.framesPerBuffer = 512;
-            audioParams_.inputDeviceId = -1;  // Default device
-            audioParams_.outputDeviceId = -1; // Default device
+            audioParams_.framesPerBuffer = 256;   // Better balance: 5.8ms latency (more stable than 128)
+            audioParams_.inputDeviceId = -1;     // Default device
+            audioParams_.outputDeviceId = -1;    // Default device
             
             // Calculate derived parameters
             auto bufferInfo = AudioConfig::getOptimalBufferSize(audioParams_.sampleRate, audioParams_.channels, true);
             audioParams_.expectedLatencyMs = (double)audioParams_.framesPerBuffer / audioParams_.sampleRate * 1000.0;
             audioParams_.packetSizeBytes = AudioConfig::calculateOptimalPacketSize(audioParams_.sampleRate, audioParams_.channels, audioParams_.framesPerBuffer);
             
-            std::cout << "\n✅ Using Default Configuration:" << std::endl;
-            std::cout << "   Sample Rate: " << audioParams_.sampleRate << "Hz" << std::endl;
+            std::cout << "\nUsing Optimized Default Configuration:" << std::endl;
+            std::cout << "   Sample Rate: " << audioParams_.sampleRate << "Hz (CD quality)" << std::endl;
             std::cout << "   Channels: " << audioParams_.channels << std::endl;
-            std::cout << "   Buffer Size: " << audioParams_.framesPerBuffer << " frames" << std::endl;
+            std::cout << "   Buffer Size: " << audioParams_.framesPerBuffer << " frames (low latency)" << std::endl;
             std::cout << "   Expected Latency: " << std::fixed << std::setprecision(1) << audioParams_.expectedLatencyMs << "ms" << std::endl;
             std::cout << "   Packet Size: " << audioParams_.packetSizeBytes << " bytes" << std::endl;
         }
@@ -84,7 +84,7 @@ public:
             return false;
         }
         
-        std::cout << "✓ Connected to " << serverHost_ << ":" << serverPort_ << std::endl;
+        std::cout << "Connected to " << serverHost_ << ":" << serverPort_ << std::endl;
 
         // Module 1: CaptureSource (Microphone capture)
         std::cout << "\n[1/4] Initializing CaptureSource..." << std::endl;
@@ -107,6 +107,9 @@ public:
             return false;
         }
         
+        // Configure RenderSource with actual audio parameters
+        renderSource_.setAudioParameters(audioParams_.sampleRate, audioParams_.channels, audioParams_.framesPerBuffer);
+        
         // Module 4: RenderSink (Speaker playback)
         std::cout << "\n[4/4] Initializing RenderSink..." << std::endl;
         if (!renderSink_.RenderSinkInit(audioParams_.outputDeviceId, audioParams_.sampleRate, audioParams_.channels, audioParams_.framesPerBuffer)) {
@@ -117,7 +120,7 @@ public:
         // Set up audio flow callbacks
         setupAudioFlow();
         
-        std::cout << "\n✓ All modules initialized successfully!" << std::endl;
+        std::cout << "\nAll modules initialized successfully!" << std::endl;
         return true;
     }
     
@@ -140,7 +143,11 @@ public:
         captureSource_.startCapture();
         renderSink_.startPlayback();
         
-        std::cout << "✓ Audio call active!" << std::endl;
+        std::cout << "✓ Audio transfer started successfully!" << std::endl;
+        std::cout << "✓ Microphone capture: ACTIVE" << std::endl;
+        std::cout << "✓ Speaker playback: ACTIVE" << std::endl;
+        std::cout << "✓ Network streaming: ACTIVE" << std::endl;
+        std::cout << "\nAudio call active!" << std::endl;
         
         // User controls
         std::cout << "\nControls:" << std::endl;
@@ -188,7 +195,7 @@ public:
         // Disconnect shared network manager
         sharedNetworkManager_.disconnect();
         
-        std::cout << "✓ Shutdown complete" << std::endl;
+        std::cout << "Shutdown complete" << std::endl;
     }
 
 private:

@@ -177,32 +177,35 @@ void CaptureSource::processAudioData(const float* data, size_t samples) {
             std::chrono::high_resolution_clock::now().time_since_epoch()
         ).count();
         
-        // Apply volume and mute controls
+        // Apply volume and mute controls with proper bounds checking
         std::vector<float> processedData(data, data + samples);
         
         if (isMuted_.load()) {
             // Mute: fill with silence
             std::fill(processedData.begin(), processedData.end(), 0.0f);
         } else {
-            // Apply volume
+            // Apply volume with clipping protection
             float volume = volume_.load();
             if (volume != 1.0f) {
                 for (float& sample : processedData) {
                     sample *= volume;
+                    // Prevent clipping
+                    if (sample > 1.0f) sample = 1.0f;
+                    else if (sample < -1.0f) sample = -1.0f;
                 }
             }
         }
         
-        // Debug: Show audio activity occasionally
+        // Debug: Show audio activity occasionally (silenced for cleaner output)
         static int audioFrameCount = 0;
         audioFrameCount++;
-        if (audioFrameCount % 1000 == 0) {  // Every ~23 seconds at 44.1kHz
+        if (audioFrameCount % 10000 == 0) {  // Every ~4.5 minutes at 44.1kHz (much less frequent)
             float avgLevel = 0.0f;
             for (size_t i = 0; i < samples; i++) {
                 avgLevel += std::abs(processedData[i]);
             }
             avgLevel /= samples;
-            std::cout << "🎤 Audio captured: " << samples << " samples, level: " << avgLevel << std::endl;
+            // std::cout << "Audio captured: " << samples << " samples, level: " << avgLevel << std::endl;
         }
         
         captureCallback_(processedData.data(), samples, timestamp);

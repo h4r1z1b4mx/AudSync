@@ -57,6 +57,9 @@ public:
     // Audio output callback
     void setRenderCallback(std::function<void(const float*, size_t, uint64_t)> callback);
     
+    // Audio configuration
+    void setAudioParameters(int sampleRate, int channels, int framesPerBuffer);
+    
     // Jitter buffer control
     void setBufferSize(double minBufferMs, double maxBufferMs, double targetBufferMs);
     
@@ -96,13 +99,18 @@ private:
     std::condition_variable jitterBufferCondition_;
     std::atomic<bool> jitterBufferReady_{false};
     
-    // Buffer configuration
-    double minBufferMs_ = 20.0;
-    double maxBufferMs_ = 200.0;
-    double targetBufferMs_ = 50.0;
-    double currentBufferSizeMs_ = 50.0;
+    // Buffer configuration - increased for better quality
+    double minBufferMs_ = 30.0;    // Increased from 20ms
+    double maxBufferMs_ = 300.0;   // Increased from 200ms  
+    double targetBufferMs_ = 75.0; // Increased from 50ms
+    double currentBufferSizeMs_ = 75.0;
     double adaptiveMaxBufferMs_ = 100.0;
     double packetIntervalMs_ = 5.8; // Approximate for 256 samples at 44.1kHz
+    
+    // Audio parameters (configurable)
+    int audioSampleRate_ = 44100;  // Default to CD quality
+    int audioChannels_ = 2;
+    int audioFramesPerBuffer_ = 256;  // Updated to match new default
     
     // Sequence tracking
     std::atomic<uint32_t> expectedSequenceNumber_{0};
