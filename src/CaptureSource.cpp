@@ -161,9 +161,13 @@ int CaptureSource::audioCallback(const void* inputBuffer, void* outputBuffer,
         return paAbort;
     }
 
-    // Handle status flags (underflow, overflow, etc.)
+    // Handle status flags with reduced verbosity
     if (statusFlags & paInputOverflow) {
-        std::cerr << "CaptureSource: Input overflow detected" << std::endl;
+        static int overflowCount = 0;
+        overflowCount++;
+        if (overflowCount % 100 == 0) {  // Only report every 100th overflow
+            std::cerr << "CaptureSource: Input overflows detected (" << overflowCount << " total)" << std::endl;
+        }
     }
 
     captureSource->processAudioData(static_cast<const float*>(inputBuffer), framesPerBuffer);
@@ -177,19 +181,27 @@ void CaptureSource::processAudioData(const float* data, size_t samples) {
             std::chrono::high_resolution_clock::now().time_since_epoch()
         ).count();
         
-        // Apply volume and mute controls with proper bounds checking
+        // Apply volume and mute controls with proper bounds checking and noise gate
         std::vector<float> processedData(data, data + samples);
         
         if (isMuted_.load()) {
             // Mute: fill with silence
             std::fill(processedData.begin(), processedData.end(), 0.0f);
         } else {
-            // Apply volume with clipping protection
+            // Apply volume with clipping protection and noise gate
             float volume = volume_.load();
-            if (volume != 1.0f) {
-                for (float& sample : processedData) {
-                    sample *= volume;
-                    // Prevent clipping
+            const float noiseGateThreshold = 0.001f; // Simple noise gate
+            
+            for (float& sample : processedData) {
+                // Apply noise gate
+                if (std::abs(sample) < noiseGateThreshold) {
+                    sample = 0.0f;
+                } else {
+                    // Apply volume
+                    if (volume != 1.0f) {
+                        sample *= volume;
+                    }
+                    // Prevent clipping with soft limiting
                     if (sample > 1.0f) sample = 1.0f;
                     else if (sample < -1.0f) sample = -1.0f;
                 }

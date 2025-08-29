@@ -139,26 +139,22 @@ bool RenderSink::queueAudioData(const float* audioData, size_t samples, uint64_t
 
     std::lock_guard<std::mutex> lock(audioQueueMutex_);
     
-    // Check buffer limit
-    size_t currentBufferSamples = 0;
-    size_t queueSize = audioQueue_.size();
-    for (size_t i = 0; i < queueSize; i++) {
-        currentBufferSamples += audioQueue_.front().size();
-        if (i < queueSize - 1) {
-            // Temporarily move front to back to count all elements
-            audioQueue_.push(audioQueue_.front());
-            audioQueue_.pop();
-        }
+    // More efficient buffer size calculation
+    size_t totalQueuedSamples = 0;
+    std::queue<std::vector<float>> tempQueue = audioQueue_; // Copy for counting
+    while (!tempQueue.empty()) {
+        totalQueuedSamples += tempQueue.front().size();
+        tempQueue.pop();
     }
     
     // Calculate buffer time in milliseconds
-    double bufferTimeMs = (double)currentBufferSamples / (sampleRate_ * channels_) * 1000.0;
+    double bufferTimeMs = (double)totalQueuedSamples / (sampleRate_ * channels_) * 1000.0;
     
-    if (bufferTimeMs > maxBufferMs_) {
-        // Drop oldest buffer to make room
-        if (!audioQueue_.empty()) {
-            audioQueue_.pop();
-        }
+    // Improved buffer management: drop multiple old packets if needed
+    while (bufferTimeMs > maxBufferMs_ && !audioQueue_.empty()) {
+        audioQueue_.pop();
+        totalQueuedSamples -= audioQueue_.empty() ? 0 : audioQueue_.front().size();
+        bufferTimeMs = (double)totalQueuedSamples / (sampleRate_ * channels_) * 1000.0;
     }
     
     // Add new audio data
@@ -261,41 +257,11 @@ bool RenderSink::fillOutputBuffer(float* outputBuffer, size_t samples) {
     
     size_t samplesWritten = 0;
     
-    // Check if we have enough buffered audio for smooth playback
-    size_t totalBufferedSamples = 0;
-    std::queue<std::vector<float>> tempQueue = audioQueue_;
-    while (!tempQueue.empty()) {
-        totalBufferedSamples += tempQueue.front().size();
-        tempQueue.pop();
-    }
-    
-    // Add current buffer samples
-    if (!currentBuffer_.empty() && currentBufferPos_ < currentBuffer_.size()) {
-        totalBufferedSamples += (currentBuffer_.size() - currentBufferPos_);
-    }
-    
-    // If buffer is getting low, show warning occasionally
-    double bufferTimeMs = (double)totalBufferedSamples / (sampleRate_ * channels_) * 1000.0;
-    static int lowBufferWarnings = 0;
-    if (bufferTimeMs < 20.0 && totalBufferedSamples > 0) {  // Less than 20ms buffered
-        lowBufferWarnings++;
-        if (lowBufferWarnings % 100 == 0) {  // Every 100th warning
-            std::cout << "Warning: Low audio buffer (" << bufferTimeMs << "ms) - may cause audio breaks" << std::endl;
-        }
-    }
-    
     while (samplesWritten < samples) {
         // If current buffer is empty or finished, get next one
         if (currentBuffer_.empty() || currentBufferPos_ >= currentBuffer_.size()) {
             if (audioQueue_.empty()) {
-                // No more audio data - this causes audio breaks
-                if (samplesWritten == 0) {
-                    static int emptyBufferCount = 0;
-                    emptyBufferCount++;
-                    if (emptyBufferCount % 50 == 0) {  // Every 50th occurrence
-                        std::cout << "Audio buffer empty - silence generated (" << emptyBufferCount << " times)" << std::endl;
-                    }
-                }
+                // No more audio data
                 break;
             }
             

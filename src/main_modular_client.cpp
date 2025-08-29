@@ -41,7 +41,7 @@ public:
 
         // Configure audio parameters
         std::cout << "\nAudio Configuration:" << std::endl;
-        std::cout << "1. Use optimized defaults (44.1kHz, 2ch, 256 frames)" << std::endl;
+        std::cout << "1. Use high-quality defaults (44.1kHz, 2ch, 512 frames)" << std::endl;
         std::cout << "2. Configure audio parameters interactively" << std::endl;
         std::cout << "Choose option [1-2]: ";
         
@@ -51,10 +51,10 @@ public:
         if (configChoice == 2) {
             audioParams_ = AudioConfig::configureInteractively();
         } else {
-            // Use optimized default parameters for better audio quality
+            // Use high-quality default parameters optimized for clarity
             audioParams_.sampleRate = 44100;     // CD quality, widely supported
             audioParams_.channels = 2;
-            audioParams_.framesPerBuffer = 256;   // Better balance: 5.8ms latency (more stable than 128)
+            audioParams_.framesPerBuffer = 512;   // Higher buffer for better quality (10.7ms latency)
             audioParams_.inputDeviceId = -1;     // Default device
             audioParams_.outputDeviceId = -1;    // Default device
             
@@ -66,7 +66,7 @@ public:
             std::cout << "\nUsing Optimized Default Configuration:" << std::endl;
             std::cout << "   Sample Rate: " << audioParams_.sampleRate << "Hz (CD quality)" << std::endl;
             std::cout << "   Channels: " << audioParams_.channels << std::endl;
-            std::cout << "   Buffer Size: " << audioParams_.framesPerBuffer << " frames (low latency)" << std::endl;
+            std::cout << "   Buffer Size: " << audioParams_.framesPerBuffer << " frames (high quality)" << std::endl;
             std::cout << "   Expected Latency: " << std::fixed << std::setprecision(1) << audioParams_.expectedLatencyMs << "ms" << std::endl;
             std::cout << "   Packet Size: " << audioParams_.packetSizeBytes << " bytes" << std::endl;
         }
@@ -143,11 +143,7 @@ public:
         captureSource_.startCapture();
         renderSink_.startPlayback();
         
-        std::cout << "✓ Audio transfer started successfully!" << std::endl;
-        std::cout << "✓ Microphone capture: ACTIVE" << std::endl;
-        std::cout << "✓ Speaker playback: ACTIVE" << std::endl;
-        std::cout << "✓ Network streaming: ACTIVE" << std::endl;
-        std::cout << "\nAudio call active!" << std::endl;
+        std::cout << "Audio call active!" << std::endl;
         
         // User controls
         std::cout << "\nControls:" << std::endl;

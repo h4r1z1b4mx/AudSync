@@ -4,8 +4,6 @@
 #include <chrono>
 #include <algorithm>
 #include <cstring>
-#include <queue>
-#include <mutex>
 
 bool RenderSource::RenderSourceInit(const std::string& serverHost, int serverPort) {
     if (isInitialized_) {
@@ -267,22 +265,9 @@ void RenderSource::receptionWorker() {
                     std::memcpy(audioPacket.audioData.data(), message.data.data(), message.size);
                     
                     if (usingSharedNetwork_) {
-                        // For shared network, use lightweight buffering instead of bypassing completely
-                        // This prevents audio timing issues while keeping low latency
-                        static std::queue<ReceivedAudioPacket> lightweightBuffer;
-                        static std::mutex lightweightMutex;
-                        static int bufferTargetSize = 3; // Keep 3 packets buffered for smooth playback
-                        
-                        {
-                            std::lock_guard<std::mutex> lock(lightweightMutex);
-                            lightweightBuffer.push(audioPacket);
-                            
-                            // Process buffered packets if we have enough
-                            while (lightweightBuffer.size() >= bufferTargetSize && renderCallback_) {
-                                auto packet = lightweightBuffer.front();
-                                lightweightBuffer.pop();
-                                renderCallback_(packet.audioData.data(), packet.audioData.size(), packet.timestamp);
-                            }
+                        // For shared network, call render callback directly (bypass jitter buffer complexity)
+                        if (renderCallback_) {
+                            renderCallback_(audioPacket.audioData.data(), audioPacket.audioData.size(), audioPacket.timestamp);
                         }
                     } else {
                         // Use jitter buffer for standalone network connections
