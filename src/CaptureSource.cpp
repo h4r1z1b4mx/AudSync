@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cstring>
 #include <algorithm>
+#include <iomanip>
 
 bool CaptureSource::CaptureSourceInit(int deviceId, int sampleRate, int channels, int framesPerBuffer) {
     if (isInitialized_) {
@@ -188,36 +189,43 @@ void CaptureSource::processAudioData(const float* data, size_t samples) {
             // Mute: fill with silence
             std::fill(processedData.begin(), processedData.end(), 0.0f);
         } else {
-            // Apply volume with clipping protection and noise gate
+            // Apply volume with clipping protection and improved noise gate
             float volume = volume_.load();
-            const float noiseGateThreshold = 0.001f; // Simple noise gate
+            const float noiseGateThreshold = 0.0001f; // Improved noise gate to reduce background noise
+            const float noiseGateRatio = 0.1f; // Gradual noise reduction instead of hard cut
             
             for (float& sample : processedData) {
-                // Apply noise gate
+                // Apply improved noise gate with gradual reduction
                 if (std::abs(sample) < noiseGateThreshold) {
-                    sample = 0.0f;
+                    sample *= noiseGateRatio; // Gradual reduction instead of complete silence
                 } else {
                     // Apply volume
                     if (volume != 1.0f) {
                         sample *= volume;
                     }
-                    // Prevent clipping with soft limiting
+                    // Soft limiting to prevent harsh clipping
+                    if (sample > 0.95f) sample = 0.95f + (sample - 0.95f) * 0.2f;
+                    else if (sample < -0.95f) sample = -0.95f + (sample + 0.95f) * 0.2f;
+                    
+                    // Final hard limit
                     if (sample > 1.0f) sample = 1.0f;
                     else if (sample < -1.0f) sample = -1.0f;
                 }
             }
         }
         
-        // Debug: Show audio activity occasionally (silenced for cleaner output)
+        // Debug: Show audio activity occasionally (reduced frequency for production)
         static int audioFrameCount = 0;
         audioFrameCount++;
-        if (audioFrameCount % 10000 == 0) {  // Every ~4.5 minutes at 44.1kHz (much less frequent)
+        if (audioFrameCount % 5000 == 0) {  // Every ~10 seconds for monitoring
             float avgLevel = 0.0f;
             for (size_t i = 0; i < samples; i++) {
                 avgLevel += std::abs(processedData[i]);
             }
             avgLevel /= samples;
-            // std::cout << "Audio captured: " << samples << " samples, level: " << avgLevel << std::endl;
+            if (avgLevel > 0.001f) {  // Only show if there's significant audio
+                std::cout << "Audio level: " << std::fixed << std::setprecision(3) << avgLevel << std::endl;
+            }
         }
         
         captureCallback_(processedData.data(), samples, timestamp);

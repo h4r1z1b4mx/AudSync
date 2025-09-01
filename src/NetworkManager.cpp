@@ -316,7 +316,19 @@ bool NetworkManager::sendRawData(SOCKET socket, const void* data, size_t size) {
     while (totalSent < size) {
         int sent = send(socket, bytes + totalSent, static_cast<int>(size - totalSent), 0);
         if (sent == SOCKET_ERROR) {
-            std::cerr << "Failed to send data" << std::endl;
+            // Check error type and handle gracefully
+            static int sendErrorCount = 0;
+            sendErrorCount++;
+            
+            // Only show first few errors to prevent spam
+            if (sendErrorCount <= 3) {
+                std::cerr << "NetworkManager: Connection lost during send (error " << sendErrorCount << ")" << std::endl;
+            } else if (sendErrorCount == 50) {
+                std::cerr << "NetworkManager: Suppressing further send errors (connection lost)" << std::endl;
+            }
+            
+            // Mark connection as broken
+            isConnected_ = false;
             return false;
         }
         totalSent += sent;

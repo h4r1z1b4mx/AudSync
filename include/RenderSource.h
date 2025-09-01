@@ -99,13 +99,13 @@ private:
     std::condition_variable jitterBufferCondition_;
     std::atomic<bool> jitterBufferReady_{false};
     
-    // Buffer configuration
-    double minBufferMs_ = 20.0;
+    // Buffer configuration - optimized for quality
+    double minBufferMs_ = 30.0;      // Increased minimum for stability
     double maxBufferMs_ = 200.0;
-    double targetBufferMs_ = 50.0;
-    double currentBufferSizeMs_ = 50.0;
-    double adaptiveMaxBufferMs_ = 100.0;
-    double packetIntervalMs_ = 5.8; // Approximate for 256 samples at 44.1kHz
+    double targetBufferMs_ = 75.0;   // Increased target for better quality
+    double currentBufferSizeMs_ = 75.0;
+    double adaptiveMaxBufferMs_ = 150.0;
+    double packetIntervalMs_ = 11.6; // Updated for 512 samples at 44.1kHz
     
     // Audio parameters (configurable)
     int audioSampleRate_ = 44100;  // Default to CD quality

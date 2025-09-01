@@ -265,10 +265,9 @@ void RenderSource::receptionWorker() {
                     std::memcpy(audioPacket.audioData.data(), message.data.data(), message.size);
                     
                     if (usingSharedNetwork_) {
-                        // For shared network, call render callback directly (bypass jitter buffer complexity)
-                        if (renderCallback_) {
-                            renderCallback_(audioPacket.audioData.data(), audioPacket.audioData.size(), audioPacket.timestamp);
-                        }
+                        // For shared network, use jitter buffer for better audio quality
+                        // The jitter buffer helps smooth out timing variations
+                        processReceivedPacket(audioPacket);
                     } else {
                         // Use jitter buffer for standalone network connections
                         processReceivedPacket(audioPacket);
@@ -277,11 +276,11 @@ void RenderSource::receptionWorker() {
                     totalPacketsReceived_.fetch_add(1);
                     totalBytesReceived_.fetch_add(message.size);
                     
-                    // Debug: Show reception activity occasionally (silenced for cleaner output)
+                    // Debug: Show reception activity occasionally (temporarily enabled for testing)
                     static int receivedPacketCount = 0;
                     receivedPacketCount++;
-                    if (receivedPacketCount % 1000 == 0) {  // Every 1000 packets (reduced frequency)
-                        // std::cout << "Received " << receivedPacketCount << " packets, " << audioPacket.audioData.size() << " samples" << std::endl;
+                    if (receivedPacketCount % 500 == 0) {  // Every 500 packets for testing
+                        std::cout << "Received " << receivedPacketCount << " packets, " << audioPacket.audioData.size() << " samples" << std::endl;
                     }
                 }
             } else {
@@ -305,15 +304,47 @@ void RenderSource::jitterBufferWorker() {
 
         if (!isRunning_.load()) break;
 
-        // Check if buffer is ready for playback
+        // Check if buffer is ready for playback - require minimum buffer for quality
         if (!jitterBufferReady_.load() && !jitterBuffer_.empty()) {
-            jitterBufferReady_.store(true);
+            // Calculate current buffer size in milliseconds
+            double currentBufferMs = jitterBuffer_.size() * packetIntervalMs_;
+            if (currentBufferMs >= targetBufferMs_) {
+                jitterBufferReady_.store(true);
+                std::cout << "RenderSource: Jitter buffer ready (" << currentBufferMs << "ms buffered)" << std::endl;
+            }
         }
 
         // Process packets if buffer is ready
         if (jitterBufferReady_.load() && !jitterBuffer_.empty()) {
-            auto it = jitterBuffer_.find(expectedSequenceNumber_.load());
-            if (it != jitterBuffer_.end()) {
+            if (usingSharedNetwork_) {
+                // For shared network, just play packets in arrival order (no strict sequencing)
+                auto it = jitterBuffer_.begin();
+                ReceivedAudioPacket packet = it->second;
+                jitterBuffer_.erase(it);
+                lock.unlock();
+
+                // Call render callback if set
+                if (renderCallback_) {
+                    renderCallback_(packet.audioData.data(), packet.audioData.size(), packet.timestamp);
+                }
+                
+                lock.lock();
+            } else {
+                // For dedicated network, use strict sequence checking
+                uint32_t expectedSeq = expectedSequenceNumber_.load();
+                auto it = jitterBuffer_.find(expectedSeq);
+                
+                // Debug: Show sequence number matching
+                static int debugCount = 0;
+                debugCount++;
+                if (debugCount % 100 == 0) {
+                    std::cout << "Jitter buffer: expecting seq " << expectedSeq << ", have " << jitterBuffer_.size() << " packets" << std::endl;
+                    if (!jitterBuffer_.empty()) {
+                        std::cout << "  Available sequences: " << jitterBuffer_.begin()->first << " to " << jitterBuffer_.rbegin()->first << std::endl;
+                    }
+                }
+                
+                if (it != jitterBuffer_.end()) {
                 ReceivedAudioPacket packet = it->second;
                 jitterBuffer_.erase(it);
                 lock.unlock();
@@ -326,11 +357,30 @@ void RenderSource::jitterBufferWorker() {
                 expectedSequenceNumber_.fetch_add(1);
                 lock.lock();
             } else {
-                // Missing packet, generate silence or wait
-                lock.unlock();
-                std::this_thread::sleep_for(std::chrono::milliseconds(1));
-                lock.lock();
+                // Missing packet - check if we should skip or wait
+                uint32_t expectedSeq = expectedSequenceNumber_.load();
+                auto nextIt = jitterBuffer_.upper_bound(expectedSeq);
+                
+                if (nextIt != jitterBuffer_.end() && 
+                    (nextIt->first - expectedSeq) < 5) {  // Allow up to 5 missing packets
+                    // Generate silence for missing packet to maintain timing
+                    lock.unlock();
+                    if (renderCallback_) {
+                        // Generate silence with same size as typical packet
+                        size_t silenceSamples = audioFramesPerBuffer_ * audioChannels_;
+                        std::vector<float> silence(silenceSamples, 0.0f);
+                        renderCallback_(silence.data(), silenceSamples, 0);
+                    }
+                    expectedSequenceNumber_.fetch_add(1);
+                    lock.lock();
+                } else {
+                    // Wait for more packets
+                    lock.unlock();
+                    std::this_thread::sleep_for(std::chrono::milliseconds(2));
+                    lock.lock();
+                }
             }
+            } // Close the else block for dedicated network
         }
         
         lock.unlock();

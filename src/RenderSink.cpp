@@ -33,12 +33,12 @@ bool RenderSink::RenderSinkInit(int deviceId, int sampleRate, int channels, int 
         return false;
     }
 
-    // Setup output parameters
+    // Setup output parameters with optimized latency
     PaStreamParameters outputParams;
     outputParams.device = deviceId_;
     outputParams.channelCount = channels_;
     outputParams.sampleFormat = paFloat32;
-    outputParams.suggestedLatency = deviceInfo->defaultLowOutputLatency;
+    outputParams.suggestedLatency = deviceInfo->defaultLowOutputLatency; // Use low latency for better quality
     outputParams.hostApiSpecificStreamInfo = nullptr;
 
     // Open PortAudio stream
@@ -161,11 +161,11 @@ bool RenderSink::queueAudioData(const float* audioData, size_t samples, uint64_t
     std::vector<float> audioBuffer(audioData, audioData + samples);
     audioQueue_.push(audioBuffer);
     
-    // Debug: Show when audio is queued for playback (silenced for cleaner output)
+    // Debug: Show when audio is queued for playback (temporarily enabled for testing)
     static int queuedPacketCount = 0;
     queuedPacketCount++;
-    if (queuedPacketCount % 1000 == 0) {  // Every 1000 packets (reduced frequency)
-        // std::cout << "Queued " << queuedPacketCount << " packets for playback, " << samples << " samples" << std::endl;
+    if (queuedPacketCount % 500 == 0) {  // Every 500 packets for testing
+        std::cout << "Queued " << queuedPacketCount << " packets for playback, " << samples << " samples" << std::endl;
     }
     
     return true;
@@ -229,6 +229,13 @@ int RenderSink::audioCallback(const void* inputBuffer, void* outputBuffer,
     
     if (!renderSink || !outputBuffer) {
         return paAbort;
+    }
+
+    // Debug: Show callback activity occasionally (reduced for production)
+    static int callbackCount = 0;
+    callbackCount++;
+    if (callbackCount % 5000 == 0) {  // Every ~10 seconds for monitoring
+        std::cout << "Audio playback active (" << callbackCount << " callbacks)" << std::endl;
     }
 
     // Handle status flags (reduced verbosity)

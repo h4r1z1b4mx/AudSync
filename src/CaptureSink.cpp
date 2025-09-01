@@ -311,7 +311,26 @@ bool CaptureSink::sendData(const void *data, size_t size)
                         static_cast<int>(size - totalSent), 0);
         if (sent <= 0)
         {
-            std::cerr << "CaptureSink: Failed to send data" << std::endl;
+            // Connection lost - set disconnected state and stop spamming
+            static int errorCount = 0;
+            errorCount++;
+            if (errorCount <= 3) {  // Only show first 3 errors
+                std::cerr << "CaptureSink: Connection lost (error " << errorCount << ")" << std::endl;
+            }
+            
+            // Mark as disconnected to prevent further attempts
+            isConnected_.store(false);
+            
+            // Close the socket
+            if (clientSocket_ != INVALID_SOCKET_VALUE) {
+#ifdef _WIN32
+                closesocket(clientSocket_);
+#else
+                close(clientSocket_);
+#endif
+                clientSocket_ = INVALID_SOCKET_VALUE;
+            }
+            
             return false;
         }
         totalSent += sent;

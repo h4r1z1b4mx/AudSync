@@ -12,6 +12,12 @@
 #include <atomic>
 #include <signal.h>
 #include <iomanip>
+#include <cmath>
+#include <algorithm>
+
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
 
 #ifdef _WIN32
 #include <conio.h>
@@ -43,18 +49,38 @@ public:
         std::cout << "\nAudio Configuration:" << std::endl;
         std::cout << "1. Use high-quality defaults (44.1kHz, 2ch, 512 frames)" << std::endl;
         std::cout << "2. Configure audio parameters interactively" << std::endl;
-        std::cout << "Choose option [1-2]: ";
+        std::cout << "3. Test mode with generated tone (for debugging)" << std::endl;
+        std::cout << "Choose option [1-3]: ";
         
         int configChoice;
         std::cin >> configChoice;
         
         if (configChoice == 2) {
             audioParams_ = AudioConfig::configureInteractively();
+        } else if (configChoice == 3) {
+            // Test mode with generated tone
+            audioParams_.sampleRate = 44100;
+            audioParams_.channels = 2;
+            audioParams_.framesPerBuffer = 512;
+            audioParams_.inputDeviceId = -1;
+            audioParams_.outputDeviceId = -1;
+            
+            auto bufferInfo = AudioConfig::getOptimalBufferSize(audioParams_.sampleRate, audioParams_.channels, true);
+            audioParams_.expectedLatencyMs = (double)audioParams_.framesPerBuffer / audioParams_.sampleRate * 1000.0;
+            audioParams_.packetSizeBytes = AudioConfig::calculateOptimalPacketSize(audioParams_.sampleRate, audioParams_.channels, audioParams_.framesPerBuffer);
+            
+            std::cout << "\nUsing Test Mode Configuration:" << std::endl;
+            std::cout << "   Sample Rate: " << audioParams_.sampleRate << "Hz" << std::endl;
+            std::cout << "   Channels: " << audioParams_.channels << std::endl;
+            std::cout << "   Buffer Size: " << audioParams_.framesPerBuffer << " frames" << std::endl;
+            std::cout << "   Test Tone: 440Hz sine wave" << std::endl;
+            
+            testToneMode_ = true;
         } else {
             // Use high-quality default parameters optimized for clarity
-            audioParams_.sampleRate = 44100;     // CD quality, widely supported
+            audioParams_.sampleRate = 48000;     // High quality, professional audio
             audioParams_.channels = 2;
-            audioParams_.framesPerBuffer = 512;   // Higher buffer for better quality (10.7ms latency)
+            audioParams_.framesPerBuffer = 256;   // Lower latency for better real-time performance
             audioParams_.inputDeviceId = -1;     // Default device
             audioParams_.outputDeviceId = -1;    // Default device
             
@@ -64,9 +90,9 @@ public:
             audioParams_.packetSizeBytes = AudioConfig::calculateOptimalPacketSize(audioParams_.sampleRate, audioParams_.channels, audioParams_.framesPerBuffer);
             
             std::cout << "\nUsing Optimized Default Configuration:" << std::endl;
-            std::cout << "   Sample Rate: " << audioParams_.sampleRate << "Hz (CD quality)" << std::endl;
+            std::cout << "   Sample Rate: " << audioParams_.sampleRate << "Hz (professional quality)" << std::endl;
             std::cout << "   Channels: " << audioParams_.channels << std::endl;
-            std::cout << "   Buffer Size: " << audioParams_.framesPerBuffer << " frames (high quality)" << std::endl;
+            std::cout << "   Buffer Size: " << audioParams_.framesPerBuffer << " frames (low latency)" << std::endl;
             std::cout << "   Expected Latency: " << std::fixed << std::setprecision(1) << audioParams_.expectedLatencyMs << "ms" << std::endl;
             std::cout << "   Packet Size: " << audioParams_.packetSizeBytes << " bytes" << std::endl;
         }
@@ -85,6 +111,7 @@ public:
         }
         
         std::cout << "Connected to " << serverHost_ << ":" << serverPort_ << std::endl;
+
 
         // Module 1: CaptureSource (Microphone capture)
         std::cout << "\n[1/4] Initializing CaptureSource..." << std::endl;
@@ -110,6 +137,9 @@ public:
         // Configure RenderSource with actual audio parameters
         renderSource_.setAudioParameters(audioParams_.sampleRate, audioParams_.channels, audioParams_.framesPerBuffer);
         
+        // Optimize jitter buffer for better quality and lower latency
+        renderSource_.setBufferSize(20.0, 100.0, 40.0); // min: 20ms, max: 100ms, target: 40ms
+        
         // Module 4: RenderSink (Speaker playback)
         std::cout << "\n[4/4] Initializing RenderSink..." << std::endl;
         if (!renderSink_.RenderSinkInit(audioParams_.outputDeviceId, audioParams_.sampleRate, audioParams_.channels, audioParams_.framesPerBuffer)) {
@@ -127,12 +157,62 @@ public:
     void setupAudioFlow() {
         // CaptureSource → CaptureSink (mic to network)
         captureSource_.setCaptureCallback([this](const float* audioData, size_t samples, uint64_t timestamp) {
-            return captureSink_.sendAudioData(audioData, samples, timestamp);
+            std::vector<float> dataToSend;
+            
+            if (testToneMode_) {
+                // Generate 440Hz test tone instead of using microphone
+                dataToSend.resize(samples);
+                const double frequency = 440.0; // A4 note
+                const double amplitude = 0.3; // 30% volume to avoid clipping
+                const double twoPi = 2.0 * M_PI;
+                const double phaseIncrement = twoPi * frequency / audioParams_.sampleRate;
+                
+                for (size_t i = 0; i < samples; i += audioParams_.channels) {
+                    double sampleValue = amplitude * sin(testTonePhase_);
+                    testTonePhase_ += phaseIncrement;
+                    if (testTonePhase_ >= twoPi) testTonePhase_ -= twoPi;
+                    
+                    // Fill both channels with same value
+                    for (int ch = 0; ch < audioParams_.channels; ch++) {
+                        if (i + ch < samples) {
+                            dataToSend[i + ch] = (float)sampleValue;
+                        }
+                    }
+                }
+                audioData = dataToSend.data();
+            } else {
+                // Use microphone data as usual
+                bool hasValidAudio = false;
+                for (size_t i = 0; i < samples && !hasValidAudio; i++) {
+                    if (std::abs(audioData[i]) > 0.0001f) {
+                        hasValidAudio = true;
+                    }
+                }
+            }
+            
+            // Send audio data - if it fails, the connection is broken
+            bool sendResult = captureSink_.sendAudioData(audioData, samples, timestamp);
+            if (!sendResult) {
+                // Connection failed - set global flag to exit gracefully
+                g_running = false;
+            }
+            return sendResult;
         });
         
         // RenderSource → RenderSink (network to speakers)
         renderSource_.setRenderCallback([this](const float* audioData, size_t samples, uint64_t timestamp) {
-            return renderSink_.queueAudioData(audioData, samples, timestamp);
+            // Debug: Show callback activity
+            static int renderCallbackCount = 0;
+            renderCallbackCount++;
+            if (renderCallbackCount % 500 == 0) {
+                std::cout << "Render callback called " << renderCallbackCount << " times, " << samples << " samples" << std::endl;
+            }
+            
+            // Validate received audio data
+            if (audioData && samples > 0) {
+                return renderSink_.queueAudioData(audioData, samples, timestamp);
+            }
+            return false;
         });
     }
     
@@ -157,8 +237,20 @@ public:
         float volume = 1.0f;
         bool muted = false;
         
-        // Main loop with non-blocking input
+        // Main loop with non-blocking input and connection monitoring
+        static auto lastConnectionCheck = std::chrono::steady_clock::now();
         while (g_running) {
+            // Check connection health periodically
+            auto now = std::chrono::steady_clock::now();
+            if (std::chrono::duration_cast<std::chrono::seconds>(now - lastConnectionCheck).count() >= 5) {
+                if (!sharedNetworkManager_.isConnected()) {
+                    std::cout << "\nConnection lost to server. Exiting..." << std::endl;
+                    g_running = false;
+                    break;
+                }
+                lastConnectionCheck = now;
+            }
+            
             // Process modules
             captureSource_.CaptureSourceProcess();
             captureSink_.CaptureSinkProcess();
@@ -310,6 +402,9 @@ private:
     CaptureSink captureSink_;
     RenderSource renderSource_;
     RenderSink renderSink_;
+    
+    bool testToneMode_ = false;
+    double testTonePhase_ = 0.0;
 };
 
 int main(int argc, char* argv[]) {
