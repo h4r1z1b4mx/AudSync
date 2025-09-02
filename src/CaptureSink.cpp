@@ -248,6 +248,7 @@ bool CaptureSink::sendAudioData(const float *audioData, size_t samples, uint64_t
     // Create Message using NetworkManager protocol
     Message audioMessage;
     audioMessage.type = MessageType::AUDIO_DATA;
+    // FIXED: Properly calculate size accounting for stereo channels (samples already includes channel data)
     audioMessage.size = static_cast<uint32_t>(samples * sizeof(float));
     audioMessage.timestamp = timestamp;
     audioMessage.data.resize(audioMessage.size);

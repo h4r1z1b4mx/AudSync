@@ -99,18 +99,18 @@ private:
     std::condition_variable jitterBufferCondition_;
     std::atomic<bool> jitterBufferReady_{false};
     
-    // Buffer configuration - optimized for quality
-    double minBufferMs_ = 30.0;      // Increased minimum for stability
-    double maxBufferMs_ = 200.0;
-    double targetBufferMs_ = 75.0;   // Increased target for better quality
-    double currentBufferSizeMs_ = 75.0;
+    // Buffer configuration - optimized for audio quality
+    double minBufferMs_ = 40.0;      // Higher minimum for quality stability
+    double maxBufferMs_ = 200.0;     // Allow larger buffer for quality
+    double targetBufferMs_ = 80.0;   // Higher target for better quality
+    double currentBufferSizeMs_ = 80.0;
     double adaptiveMaxBufferMs_ = 150.0;
-    double packetIntervalMs_ = 11.6; // Updated for 512 samples at 44.1kHz
+    double packetIntervalMs_ = 10.7; // Updated for 512 samples at 48kHz
     
     // Audio parameters (configurable)
-    int audioSampleRate_ = 44100;  // Default to CD quality
-    int audioChannels_ = 2;
-    int audioFramesPerBuffer_ = 512;  // Higher buffer for better quality
+    int audioSampleRate_ = 48000;    // Professional quality, matches client default
+    int audioChannels_ = 2;          // Stereo
+    int audioFramesPerBuffer_ = 512; // Higher buffer size for better quality
     
     // Sequence tracking
     std::atomic<uint32_t> expectedSequenceNumber_{0};

@@ -47,17 +47,35 @@ public:
 
         // Configure audio parameters
         std::cout << "\nAudio Configuration:" << std::endl;
-        std::cout << "1. Use high-quality defaults (44.1kHz, 2ch, 512 frames)" << std::endl;
-        std::cout << "2. Configure audio parameters interactively" << std::endl;
-        std::cout << "3. Test mode with generated tone (for debugging)" << std::endl;
-        std::cout << "Choose option [1-3]: ";
+        std::cout << "1. PREMIUM QUALITY MODE (48kHz, 2ch, 1024 frames - Maximum Quality)" << std::endl;
+        std::cout << "2. BALANCED QUALITY MODE (48kHz, 2ch, 512 frames - Good Quality & Latency)" << std::endl;
+        std::cout << "3. Configure audio parameters interactively" << std::endl;
+        std::cout << "4. Test mode with generated tone (for debugging)" << std::endl;
+        std::cout << "Choose option [1-4]: ";
         
         int configChoice;
         std::cin >> configChoice;
         
         if (configChoice == 2) {
-            audioParams_ = AudioConfig::configureInteractively();
+            // BALANCED QUALITY MODE
+            audioParams_.sampleRate = 48000;     // Professional quality
+            audioParams_.channels = 2;           // Stereo
+            audioParams_.framesPerBuffer = 512;  // Balanced latency/quality (10.7ms)
+            audioParams_.inputDeviceId = -1;     // Default device
+            audioParams_.outputDeviceId = -1;    // Default device
+            
+            auto bufferInfo = AudioConfig::getOptimalBufferSize(audioParams_.sampleRate, audioParams_.channels, true);
+            audioParams_.expectedLatencyMs = (double)audioParams_.framesPerBuffer / audioParams_.sampleRate * 1000.0;
+            audioParams_.packetSizeBytes = AudioConfig::calculateOptimalPacketSize(audioParams_.sampleRate, audioParams_.channels, audioParams_.framesPerBuffer);
+            
+            std::cout << "\nUsing BALANCED QUALITY Configuration:" << std::endl;
+            std::cout << "   Sample Rate: " << audioParams_.sampleRate << "Hz (professional)" << std::endl;
+            std::cout << "   Channels: " << audioParams_.channels << " (stereo)" << std::endl;
+            std::cout << "   Buffer Size: " << audioParams_.framesPerBuffer << " frames (balanced)" << std::endl;
+            std::cout << "   Expected Latency: " << std::fixed << std::setprecision(1) << audioParams_.expectedLatencyMs << "ms" << std::endl;
         } else if (configChoice == 3) {
+            audioParams_ = AudioConfig::configureInteractively();
+        } else if (configChoice == 4) {
             // Test mode with generated tone
             audioParams_.sampleRate = 44100;
             audioParams_.channels = 2;
@@ -77,24 +95,25 @@ public:
             
             testToneMode_ = true;
         } else {
-            // Use high-quality default parameters optimized for clarity
-            audioParams_.sampleRate = 48000;     // High quality, professional audio
-            audioParams_.channels = 2;
-            audioParams_.framesPerBuffer = 256;   // Lower latency for better real-time performance
+            // PREMIUM QUALITY MODE (Option 1) - MAXIMUM QUALITY
+            audioParams_.sampleRate = 48000;     // Professional audio quality
+            audioParams_.channels = 2;           // Stereo
+            audioParams_.framesPerBuffer = 1024; // PREMIUM: Higher buffer for maximum quality (21.3ms)
             audioParams_.inputDeviceId = -1;     // Default device
             audioParams_.outputDeviceId = -1;    // Default device
             
             // Calculate derived parameters
-            auto bufferInfo = AudioConfig::getOptimalBufferSize(audioParams_.sampleRate, audioParams_.channels, true);
+            auto bufferInfo = AudioConfig::getOptimalBufferSize(audioParams_.sampleRate, audioParams_.channels, false); // Premium mode
             audioParams_.expectedLatencyMs = (double)audioParams_.framesPerBuffer / audioParams_.sampleRate * 1000.0;
             audioParams_.packetSizeBytes = AudioConfig::calculateOptimalPacketSize(audioParams_.sampleRate, audioParams_.channels, audioParams_.framesPerBuffer);
             
-            std::cout << "\nUsing Optimized Default Configuration:" << std::endl;
-            std::cout << "   Sample Rate: " << audioParams_.sampleRate << "Hz (professional quality)" << std::endl;
-            std::cout << "   Channels: " << audioParams_.channels << std::endl;
-            std::cout << "   Buffer Size: " << audioParams_.framesPerBuffer << " frames (low latency)" << std::endl;
+            std::cout << "\nUsing PREMIUM QUALITY Configuration:" << std::endl;
+            std::cout << "   Sample Rate: " << audioParams_.sampleRate << "Hz (professional studio quality)" << std::endl;
+            std::cout << "   Channels: " << audioParams_.channels << " (stereo)" << std::endl;
+            std::cout << "   Buffer Size: " << audioParams_.framesPerBuffer << " frames (PREMIUM for maximum quality)" << std::endl;
             std::cout << "   Expected Latency: " << std::fixed << std::setprecision(1) << audioParams_.expectedLatencyMs << "ms" << std::endl;
             std::cout << "   Packet Size: " << audioParams_.packetSizeBytes << " bytes" << std::endl;
+            std::cout << "   >>> PREMIUM MODE: Optimized for maximum audio fidelity <<<" << std::endl;
         }
 
         // First, create shared network connection
@@ -201,11 +220,11 @@ public:
         
         // RenderSource → RenderSink (network to speakers)
         renderSource_.setRenderCallback([this](const float* audioData, size_t samples, uint64_t timestamp) {
-            // Debug: Show callback activity
+            // Debug: Show callback activity very rarely
             static int renderCallbackCount = 0;
             renderCallbackCount++;
-            if (renderCallbackCount % 500 == 0) {
-                std::cout << "Render callback called " << renderCallbackCount << " times, " << samples << " samples" << std::endl;
+            if (renderCallbackCount % 10000 == 0) {  // Every 10000 calls for minimal impact
+                std::cout << "Render callback active (" << renderCallbackCount << " calls, " << samples << " samples)" << std::endl;
             }
             
             // Validate received audio data

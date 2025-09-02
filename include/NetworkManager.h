@@ -59,7 +59,7 @@ public:
     void disconnect();
     bool sendMessage(const Message& message);
     bool receiveMessage(Message& message);
-    bool receiveMessage(Message& message, SOCKET socket);  // ← ADD THIS LINE
+    bool receiveMessage(Message& message, SOCKET socket);
     
     // Common methods
     void setMessageHandler(MessageHandler handler);

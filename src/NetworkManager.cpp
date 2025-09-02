@@ -51,7 +51,7 @@ bool NetworkManager::startServer(int port) {
         return false;
     }
     
-    // Set socket options
+    // Set socket options for better performance and reliability
     int opt = 1;
     if (setsockopt(serverSocket_, SOL_SOCKET, SO_REUSEADDR, 
                    reinterpret_cast<const char*>(&opt), sizeof(opt)) < 0) {
@@ -59,6 +59,20 @@ bool NetworkManager::startServer(int port) {
         closeSocket(serverSocket_);
         return false;
     }
+    
+    // Enable TCP_NODELAY for low latency
+    int nodelay = 1;
+    if (setsockopt(serverSocket_, IPPROTO_TCP, TCP_NODELAY,
+                   reinterpret_cast<const char*>(&nodelay), sizeof(nodelay)) < 0) {
+        std::cerr << "Warning: Failed to set TCP_NODELAY" << std::endl;
+    }
+    
+    // Set larger send/receive buffers for audio data
+    int bufferSize = 64 * 1024; // 64KB
+    setsockopt(serverSocket_, SOL_SOCKET, SO_SNDBUF,
+               reinterpret_cast<const char*>(&bufferSize), sizeof(bufferSize));
+    setsockopt(serverSocket_, SOL_SOCKET, SO_RCVBUF,
+               reinterpret_cast<const char*>(&bufferSize), sizeof(bufferSize));
     
     sockaddr_in serverAddr{};
     serverAddr.sin_family = AF_INET;
@@ -151,10 +165,22 @@ bool NetworkManager::connectToServer(const std::string& host, int port) {
         return false;
     }
     
-    isConnected_ = true;
-    running_ = true;
+    // Set client socket options for better performance
+    int nodelay = 1;
+    if (setsockopt(clientSocket_, IPPROTO_TCP, TCP_NODELAY,
+                   reinterpret_cast<const char*>(&nodelay), sizeof(nodelay)) < 0) {
+        std::cerr << "Warning: Failed to set TCP_NODELAY on client socket" << std::endl;
+    }
     
-    // Send connect message
+    // Set larger send/receive buffers for audio data
+    int bufferSize = 64 * 1024; // 64KB
+    setsockopt(clientSocket_, SOL_SOCKET, SO_SNDBUF,
+               reinterpret_cast<const char*>(&bufferSize), sizeof(bufferSize));
+    setsockopt(clientSocket_, SOL_SOCKET, SO_RCVBUF,
+               reinterpret_cast<const char*>(&bufferSize), sizeof(bufferSize));
+
+    isConnected_ = true;
+    running_ = true;    // Send connect message
     if (messageHandler_) {
         Message connectMsg;
         connectMsg.type = MessageType::CONNECT;
@@ -200,6 +226,20 @@ void NetworkManager::serverLoop() {
             continue;
         }
         
+        // Set socket options for the accepted client socket
+        int nodelay = 1;
+        if (setsockopt(clientSocket, IPPROTO_TCP, TCP_NODELAY,
+                       reinterpret_cast<const char*>(&nodelay), sizeof(nodelay)) < 0) {
+            std::cerr << "Warning: Failed to set TCP_NODELAY on client connection" << std::endl;
+        }
+        
+        // Set larger send/receive buffers
+        int bufferSize = 64 * 1024; // 64KB
+        setsockopt(clientSocket, SOL_SOCKET, SO_SNDBUF,
+                   reinterpret_cast<const char*>(&bufferSize), sizeof(bufferSize));
+        setsockopt(clientSocket, SOL_SOCKET, SO_RCVBUF,
+                   reinterpret_cast<const char*>(&bufferSize), sizeof(bufferSize));
+
         {
             std::lock_guard<std::mutex> lock(clientsMutex_);
             connectedClients_.push_back(clientSocket);
@@ -228,6 +268,7 @@ void NetworkManager::handleClient(SOCKET clientSocket) {
                 messageHandler_(message, clientSocket);
             }
         } else {
+            std::cout << "Client " << clientSocket << " disconnected" << std::endl;
             break; // Client disconnected
         }
     }
@@ -316,18 +357,13 @@ bool NetworkManager::sendRawData(SOCKET socket, const void* data, size_t size) {
     while (totalSent < size) {
         int sent = send(socket, bytes + totalSent, static_cast<int>(size - totalSent), 0);
         if (sent == SOCKET_ERROR) {
-            // Check error type and handle gracefully
-            static int sendErrorCount = 0;
-            sendErrorCount++;
-            
-            // Only show first few errors to prevent spam
-            if (sendErrorCount <= 3) {
-                std::cerr << "NetworkManager: Connection lost during send (error " << sendErrorCount << ")" << std::endl;
-            } else if (sendErrorCount == 50) {
-                std::cerr << "NetworkManager: Suppressing further send errors (connection lost)" << std::endl;
+            int error = WSAGetLastError();
+            if (error == WSAECONNRESET) {
+                std::cout << "Connection reset by peer" << std::endl;
+            } else {
+                std::cerr << "Connection lost during send (error: " << error << ")" << std::endl;
             }
             
-            // Mark connection as broken
             isConnected_ = false;
             return false;
         }
@@ -345,10 +381,16 @@ bool NetworkManager::receiveRawData(SOCKET socket, void* data, size_t size) {
         int received = recv(socket, bytes + totalReceived, static_cast<int>(size - totalReceived), 0);
         if (received <= 0) {
             if (received == 0) {
-                std::cout << "Client disconnected" << std::endl;
+                std::cout << "Client disconnected gracefully" << std::endl;
             } else {
-                std::cerr << "Failed to receive data" << std::endl;
+                int error = WSAGetLastError();
+                if (error == WSAECONNRESET) {
+                    std::cout << "Connection reset by peer" << std::endl;
+                } else {
+                    std::cerr << "Failed to receive data (error: " << error << ")" << std::endl;
+                }
             }
+            isConnected_ = false;
             return false;
         }
         totalReceived += received;
